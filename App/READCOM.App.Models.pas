@@ -1,10 +1,13 @@
+//Description: READ-COM App Models
+//Author: George Birbilis (http://zoomicon.com)
+
 unit READCOM.App.Models;
 
 interface
 
 uses
   Zoomicon.Generics.Collections, //for TListEx
-  Zoomicon.Media.Classes, //for TMediaPlayerEx
+  Zoomicon.Media.FMX, //for TMediaPlayerEx
   System.Classes, //for TStream
   System.Generics.Collections, //for TList
   System.UITypes, //for TAlphaColor
@@ -70,17 +73,14 @@ type
     procedure SetCurrentPanel(const Value: IPanelStoryItem);
     property CurrentPanel: IPanelStoryItem read GetCurrentPanel write SetCurrentPanel;
 
-    procedure ZoomTo(const StoryItem: IStoryItem);
+    procedure ZoomTo(const StoryItem: IStoryItem = nil); //ZoomTo(nil) zooms to all content
   end;
 
   IStoryItem = interface(IStoreable)
     ['{238909DD-45E6-463A-9698-C7C6DC1A6DFE}']
+
     //--- Methods ---
     procedure PlayRandomAudioStoryItem;
-
-    { Id }
-    function GetId: TGUID;
-    procedure SetId(const Value: TGUID);
 
     { View }
     function GetView: TControl;
@@ -96,17 +96,21 @@ type
     { AudioStoryItems }
     function GetAudioStoryItems: TIAudioStoryItemList;
 
+    { Active }
+    function IsActive: Boolean;
+    procedure SetActive(const Value: Boolean);
+
     { Hidden }
     function IsHidden: Boolean;
     procedure SetHidden(const Value: Boolean);
 
-    { Target }
-    function GetTarget: IStoryItem;
-    procedure SetTarget(const Value: IStoryItem);
+    { Anchored }
+    function IsAnchored: Boolean;
+    procedure SetAnchored(const Value: Boolean);
 
-    { TargetId }
-    function GetTargetId: TGUID;
-    procedure SetTargetId(const Value: TGUID);
+    { UrlAction }
+    function GetUrlAction: String;
+    procedure SetUrlAction(const Value: String);
 
     { StoryMode }
     function GetStoryMode: TStoryMode;
@@ -115,26 +119,27 @@ type
     { Options }
     function GetOptions: IStoryItemOptions;
 
-    //--- Messages ---
-    procedure HandleParentNavigatedToChanged;
-
     //--- Properties ---
-    property Id: TGUID read GetId write SetId;
     property View: TControl read GetView;
     property ParentStoryItem: IStoryItem read GetParentStoryItem write SetParentStoryItem; //default nil //stored false
     property StoryItems: TIStoryItemList read GetStoryItems write SetStoryItems; //default nil
     property AudioStoryItems: TIAudioStoryItemList read GetAudioStoryItems; //stored false
+    property Active: Boolean read IsActive write SetActive; //default false
     property Hidden: Boolean read IsHidden write SetHidden; //default false
-    property Target: IStoryItem read GetTarget write SetTarget; //stored false
-    property TargetId: TGUID read GetTargetId write SetTargetId; //default ''
     property StoryMode: TStoryMode read GetStoryMode write SetStoryMode; //default AnimatedStoryMode
     property Options: IStoryItemOptions read GetOptions; //stored false
   end;
 
   IStoryItemOptions = interface
     ['{1AEC7512-1E1D-4720-9D74-9A5411A64377}']
+
+    //--- Methods ---
+    { View }
+    function GetView: TControl;
+
     { StoryItem }
     function GetStoryItem: IStoryItem;
+    procedure SetStoryItem(const Value: IStoryItem);
 
     { DeleteVisible }
     function IsDeleteVisible: Boolean;
@@ -144,11 +149,27 @@ type
     procedure ShowPopup;
     procedure HidePopup;
 
+    //--- Properties ---
+    property View: TControl read GetView; //stored false
+    property StoryItem: IStoryItem read GetStoryItem write SetStoryItem; //stored false
     property DeleteVisible: Boolean read IsDeleteVisible write SetDeleteVisible;
   end;
 
+  IBitmapImageStoryItemOptions = interface(IStoryItemOptions)
+    ['{DA637418-9648-48C7-A0CB-7475CAFECBAE}']
+
+    { BitmapImageStoryItem }
+    function GetBitmapImageStoryItem: IBitmapImageStoryItem;
+    procedure SetBitmapImageStoryItem(const Value: IBitmapImageStoryItem);
+
+    //-- Properties --
+    property BitmapImageStoryItem: IBitmapImageStoryItem read GetBitmapImageStoryItem write SetBitmapImageStoryItem; //stored false
+  end;
+
+
   IPanelStoryItem = interface(IStoryItem)
     ['{61292D80-36A5-4330-B52B-685D538C1E52}']
+
     //--- Methods ---
     procedure NavigateTo;
 
@@ -175,6 +196,7 @@ type
 
   IImageStoryItem = interface(IStoryItem)
     ['{26111D6E-A587-4AB5-8CC9-84269C2719DC}']
+
     //--- Methods ---
     { Image }
     function GetImage: TImage;
@@ -186,6 +208,7 @@ type
 
   IBitmapImageStoryItem = interface(IImageStoryItem)
     ['{97C577C0-5391-4B1D-8EA9-119D35B91523}']
+
     //--- Methods ---
     { Image }
     function GetImage: TImage;
@@ -197,6 +220,7 @@ type
 
   IVectorImageStoryItem = interface(IImageStoryItem)
     ['{6A71E9E3-D0AC-452E-9DF9-6DFC25BFB2CD}']
+
     //--- Methods ---
     { Image }
     function GetSVGImage: TSVGIconImage;
@@ -209,6 +233,7 @@ type
 
   IAudioStoryItem = interface(IStoryItem)
     ['{5C29ED8A-C6D1-47C2-A8F8-F41249C5846B}']
+
     //--- Methods ---
     procedure Play;
 
@@ -241,6 +266,7 @@ type
 
   ITextStoryItem = interface(IStoryItem)
     ['{A05D85F0-F7F6-4EA1-8D4F-0C6FF7BEA572}']
+
     //--- Methods ---
     { Text }
     function GetText: String;
@@ -268,6 +294,7 @@ type
     property InputPrompt: String read GetInputPrompt write SetInputPrompt;
     property Font: TFont read GetFont write SetFont; //sets font size, font family (typeface), font style (bold, italic, underline, strikeout)
     property TextColor: TAlphaColor read GetTextColor write SetTextColor;
+    //TODO:  (maybe remove and just add filterchar string like in TEdit)
   end;
 
 implementation

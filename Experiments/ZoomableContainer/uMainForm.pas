@@ -12,7 +12,7 @@ uses
   FMX.Types,
   System.Classes,
   System.Types,
-  Zoomicon.Zooming.Models; //for IZoomable
+  Zoomicon.Zooming.Models, SubjectStand, FrameStand, FMX.MultiView; //for IZoomable
 
 const
   DEFAULT_ZOOM_CONTROLS_VISIBLE = true;
@@ -22,29 +22,40 @@ type
     ScrollBox: TScrollBox;
     trackZoomY: TTrackBar;
     ScaledLayout: TScaledLayout;
-    btnZoom1: TButton;
+    btnBottomRight: TButton;
     FillRect2: TRectangle;
     FillRect1: TRectangle;
     Zoomer: TScaledLayout;
     trackZoomX: TTrackBar;
     switchSyncAxes: TSwitch;
     ZoomControls: TGridPanelLayout;
-    btnZoom2: TButton;
-    btnZoom3: TButton;
-    btnZoom4: TButton;
-    btnZoom5: TButton;
-    btnZoom5a: TButton;
+    btnTopLeft: TButton;
+    btnTopRight: TButton;
+    btnBottomLeft: TButton;
+    btnCenter: TButton;
+    btnCenterChild: TButton;
+    btnUpScaled: TButton;
+    btnDownScaled: TButton;
+    btnDownScaledChild: TButton;
+    btnTopLeftChild: TButton;
+    btnMenu: TSpeedButton;
+    MultiViewFrameStand: TFrameStand;
+    MainLayout: TLayout;
+    MultiView: TMultiView;
+    ContentLayout: TLayout;
     procedure btnZoomClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure ScrollBoxResize(Sender: TObject);
     procedure trackZoomXTracking(Sender: TObject);
     procedure trackZoomYTracking(Sender: TObject);
     procedure ScrollBoxMouseWheel(Sender: TObject; Shift: TShiftState; WheelDelta: Integer; var Handled: Boolean);
+    procedure MultiViewStartShowing(Sender: TObject);
 
   protected
     FStoredWheelDelta: extended;
     FOnZoomChanged: TZoomChangedEvent;
     procedure UpdateZoomFromTrackbars;
+    procedure StructureViewSelection(Sender: TComponent; Selection: TObject);
 
     {Proportional}
     function IsProportional: Boolean;
@@ -74,7 +85,11 @@ var
 
 implementation
   uses
-    Zoomicon.FMX.Utils, //for TScaledLayoutHelper
+    Zoomicon.Introspection.FMX.StructureView, //for TStructureView
+    Zoomicon.Helpers.FMX.Layouts.ScaledLayoutHelpers, //for TScaledLayout.ScalingFactor
+    Zoomicon.Helpers.FMX.Layouts.ScrollBoxHelpers, //for GetScrollBoxParent
+    Zoomicon.Helpers.RTL.ClassListHelpers, //for TClassList.Create(TClassArray)
+    Contnrs, //for TClassList
     Math; //for Sign
 
 {$R *.fmx}
@@ -126,28 +141,37 @@ begin
     end;
 end;
 
+//TODO: take in mind scrollbar size
 procedure TMainForm.ZoomTo(const Control: TControl; const KeepRatio: Boolean = true); //TODO: adjust for scrollbar sizes
 begin
+  {$region 'Zoom'}
   //BeginUpdate; //Not needed
-  var Rect := Control.BoundsRect;
 
-  var scalingFactor := ScaledLayout.ScalingFactor;
+  var ZoomerAbsRect := Zoomer.AbsoluteRect;
+  var ControlAbsRect := Control.AbsoluteRect;
 
   if KeepRatio then
     begin
-    var zoomFactor := Min(Zoomer.OriginalWidth/(Rect.Width*scalingFactor.X), Zoomer.OriginalHeight/(Rect.Height*scalingFactor.Y)); //using Max here would mean you fill the area but get some cliping
-    SetZoom(zoomFactor);
+      var ZoomFactor := Min(ZoomerAbsRect.Width / ControlAbsRect.Width, ZoomerAbsRect.Height / ControlAbsRect.Height);
+      SetZoom(ZoomFactor);
     end
   else
     begin
-    var zoomFactor := TPointF.Create(Zoomer.OriginalWidth/(Rect.Width*scalingFactor.X), Zoomer.OriginalHeight/(Rect.Height*scalingFactor.Y));
-    SetZoom(zoomFactor);
+      var ZoomFactor := PointF(ZoomerAbsRect.Width / ControlAbsRect.Width, ZoomerAbsRect.Height / ControlAbsRect.Height);
+      SetZoom(ZoomFactor);
     end;
 
+  //RecalcAbsolute; //TForm doesn't seem to have such method (would probably be needed if we wrapped everything in a single BeginUpdate/EndUpdate, haven't made that work ok though)
   //EndUpdate; //make sure we do this here if needed, not at the end, else scrolling calculations won't work
 
+  {$endregion}
+
+  {$region 'Pan (center)'}
+
+  ControlAbsRect := Control.AbsoluteRect; //NEEDED TO RECALCULATE AFTER ZOOMING IN ORDER TO FIND THE CORRECT CENTER
+
   var ZoomerParent := Zoomer.ParentControl;
-  var CenterPointNewCoords := ZoomerParent.AbsoluteToLocal(Control.ParentControl.LocalToAbsolute(Rect.CenterPoint*scalingFactor)); //must adjust the CenterPoint by the ScalingFactor here
+  var CenterPointNewCoords := ZoomerParent.AbsoluteToLocal(ControlAbsRect.CenterPoint);
 
   var ScrollBoxHost := GetScrollBoxParent(Zoomer);
   if (ScrollBoxHost <> nil) then
@@ -160,6 +184,8 @@ begin
     var offsetPos := CenterPointNewCoords - TPointF.Create(ZoomerParent.Width/2, ZoomerParent.Height/2);
     Zoomer.Position.Point := offsetPos;
     end;
+
+  {$endregion}
 end;
 
 {$endregion}
@@ -277,6 +303,28 @@ begin
   //with ScrollBox.ViewportPosition do ShowMessageFmt('ViewPortPosition before: (%f, %f)', [x, y]);
   ZoomTo(Control, switchSyncAxes.IsChecked);
   //with ScrollBox.ViewportPosition do ShowMessageFmt('ViewPortPosition after: (%f, %f)', [x, y]);
+end;
+
+procedure TMainForm.StructureViewSelection(Sender: TComponent; Selection: TObject);
+begin
+  ZoomTo(TControl(Selection)); //TODO: see why while in deeper zooms the StructureView item structure (and bitmaps) don't show up properly
+  MultiView.HideMaster;
+end;
+
+procedure TMainForm.MultiViewStartShowing(Sender: TObject);
+begin
+  with MultiViewFrameStand do
+  begin
+    CloseAllExcept(TStructureView);
+    var info:= MultiViewFrameStand.GetFrameInfo<TStructureView>;
+    with info.Frame do
+    begin
+      GUIRoot := ScaledLayout;
+      ShowOnlyClasses := TClassList.Create([TScaledLayout, TButton]);
+      OnSelection := StructureViewSelection;
+    end;
+    info.Show;
+  end;
 end;
 
 end.

@@ -1,0 +1,16 @@
+inherited BitmapImageStoryItemOptions: TBitmapImageStoryItemOptions
+  inherited ActionList: TActionList
+    inherited actionDelete: TAction
+      ImageIndex = 3
+    end
+    inherited actionOpen: TAction
+      ImageIndex = 1
+    end
+    inherited actionSave: TAction
+      ImageIndex = 2
+    end
+    inherited actionAnchor: TAction
+      ImageIndex = 0
+    end
+  end
+end

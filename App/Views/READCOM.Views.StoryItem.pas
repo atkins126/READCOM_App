@@ -1,54 +1,66 @@
+//Description: READ-COM StoryItem View
+//Author: George Birbilis (http://zoomicon.com)
+
 unit READCOM.Views.StoryItem;
 
 interface
 
 uses
   READCOM.App.Models, //for IStoryItem
-  READCOM.Messages.Models, //for IMessageEditModeChange
-  Zoomicon.Manipulator,
-  iPub.Rtl.Messaging, //for SubscribeAttrible, GMessaging
+  Zoomicon.Manipulation.FMX.CustomManipulator, //for TCustomManipulator
+  Zoomicon.Puzzler.Models, //for IHasTarget
+  Zoomicon.Puzzler.Classes, //for TControlHasTargetHelper
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
   FMX.Types, FMX.Graphics, FMX.Controls, FMX.Forms, FMX.Dialogs, FMX.StdCtrls,
   FMX.Objects, FMX.SVGIconImage, FMX.ExtCtrls, FMX.Controls.Presentation;
 
 const
-  DEFAULT_AUTOSIZE = true;
   MSG_CONTENT_FORMAT_NOT_SUPPORTED = 'Content format not supported: %s';
 
 type
-  IMessageNavigatedTo = IMessageSingleValue<IStoryItem>; //TODO: check that GUID reuse won't cause issues
-
-  TStoryItem = class(TManipulator, IStoryItem, IStoreable)
-    DropTarget: TDropTarget;
-    procedure DropTargetDropped(Sender: TObject; const Data: TDragObject; const Point: TPointF);
-    procedure DropTargetDragOver(Sender: TObject; const Data: TDragObject; const Point: TPointF; var Operation: TDragOperation);
+  TStoryItem = class(TCustomManipulator, IStoryItem, IStoreable, IHasTarget, IMultipleHasTarget) //IHasTarget implemented via TControlHasTargetHelper //IMultipleHasTarget implemented via TControlMultipleHasTargetHelper
+    Border: TRectangle;
+    Glyph: TSVGIconImage;
 
   //-- Fields ---
 
   protected
-    FID: TGUID;
-    FAutoSize: Boolean;
+    //FID: TGUID;
     FHidden: Boolean;
+    FUrlAction: String;
     FOptions: IStoryItemOptions;
     FStoryMode: TStoryMode;
+    FOnActiveChanged: TNotifyEvent;
+
+    class var
+      FActiveStoryItem: IStoryItem;
+      FOnActiveStoryItemChanged: TNotifyEvent;
 
   //--- Methods ---
 
   protected
+    procedure Init; virtual;
+    //procedure Loaded; override;
+    //procedure Updated; override;
     function GetDefaultSize: TSizeF; override;
     procedure SetParent(const Value: TFmxObject); override;
     procedure SetEditMode(const Value: Boolean); override;
 
+    {BorderVisible}
+    function GetBorderVisible: Boolean;
+    procedure SetBorderVisible(const Value: Boolean);
+
+    {ActiveStoryItem}
+    class procedure SetActiveStoryItem(const Value: IStoryItem); static; //static means has no "Self" passed to it, required for "class property" accessors
+
+    procedure ActiveChanged;
     procedure ApplyHidden;
     procedure LoadReadCom(const Stream: TStream); virtual;
     procedure SaveReadCom(const Stream: TStream); virtual;
 
-    procedure Click; override; //preferring overriden methods instead of event handlers that get stored with saved state
-    procedure Tap(const Point: TPointF); override;
-    //procedure CanFocus(var ACanFocus: Boolean); override;
-
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
 
     procedure PlayRandomAudioStoryItem;
 
@@ -62,10 +74,6 @@ type
     function SaveToString: string; virtual;
     procedure Save(const Stream: TStream; const ContentFormat: String = EXT_READCOM); overload; virtual;
     procedure Save(const Filepath: string); overload; virtual;
-
-    { Id }
-    function GetId: TGUID;
-    procedure SetId(const Value: TGUID);
 
     { View }
     function GetView: TControl;
@@ -81,46 +89,55 @@ type
     { AudioStoryItems }
     function GetAudioStoryItems: TIAudioStoryItemList;
 
+    { Active }
+    function IsActive: Boolean;
+    procedure SetActive(const Value: Boolean);
+
     { Hidden }
     function IsHidden: Boolean;
     procedure SetHidden(const Value: Boolean);
 
-    { Target }
-    function GetTarget: IStoryItem;
-    procedure SetTarget(const Value: IStoryItem);
+    { Anchored }
+    function IsAnchored: Boolean;
+    procedure SetAnchored(const Value: Boolean);
 
-    { TargetId }
-    function GetTargetId: TGUID;
-    procedure SetTargetId(const Value: TGUID);
+    { UrlAction }
+    function GetUrlAction: String;
+    procedure SetUrlAction(const Value: String);
 
     { StoryMode }
     function GetStoryMode: TStoryMode;
     procedure SetStoryMode(const Value: TStoryMode);
 
     { Options }
-    function GetOptions: IStoryItemOptions;
+    function GetOptions: IStoryItemOptions; virtual; //TODO: make methods that are available via properties protected?
 
   //--- Events ---
 
-  public
-    //[Subscribe(TipMessagingThread.Main)]
-    //procedure OnNavigatedTo(const AMessage: IMessageNavigatedTo);
-    procedure HandleParentNavigatedToChanged;
+  protected
+    //procedure CanFocus(var ACanFocus: Boolean); override;
+    procedure KeyDown(var Key: Word; var KeyChar: WideChar; Shift: TShiftState); override;
+    procedure MouseClick(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override; //preferring overriden methods instead of event handlers that get stored with saved state
+    procedure DropTargetDropped(const Filepaths: array of string); override;
+    procedure Tap(const Point: TPointF); override;
 
   //--- Properties ---
 
   protected
-    property AutoSize: Boolean read FAutoSize write FAutoSize default DEFAULT_AUTOSIZE;
     property Options: IStoryItemOptions read GetOptions stored false;
+    property BorderVisible: Boolean read GetBorderVisible write SetBorderVisible;
+
+    class property ActiveStoryItem: IStoryItem read FActiveStoryItem write SetActiveStoryItem;
+    class property OnActiveStoryItemChanged: TNotifyEvent read FOnActiveStoryItemChanged write FOnActiveStoryItemChanged;
 
   published
-    property Id: TGUID read GetId write SetId;
     property ParentStoryItem: IStoryItem read GetParentStoryItem write SetParentStoryItem stored false; //default nil
     property StoryItems: TIStoryItemList read GetStoryItems write SetStoryItems stored false; //default nil
     property AudioStoryItems: TIAudioStoryItemList read GetAudioStoryItems stored false; //default nil
+    property Active: Boolean read IsActive write SetActive; //default false
     property Hidden: Boolean read IsHidden write SetHidden; //default false
-    property Target: IStoryItem read GetTarget write SetTarget stored false; //default nil
-    property TargetId: TGUID read GetTargetId write SetTargetId; //default ''
+    property Anchored: Boolean read IsAnchored write SetAnchored; //default false
+    property UrlAction: String read GetUrlAction write SetUrlAction; //default nil
     property StoryMode: TStoryMode read GetStoryMode write SetStoryMode stored false;
   end;
 
@@ -128,29 +145,82 @@ type
 
 implementation
   uses
+    u_UrlOpen,
+    Zoomicon.Helpers.FMX.Controls.ControlHelpers, //for TControlFocusHelper.SelectNext
     Zoomicon.Generics.Collections,
     READCOM.Views.Options.StoryItemOptions;
 
 {$R *.fmx}
 
-constructor TStoryItem.Create(AOwner: TComponent);
+{
+procedure TStoryItem.Loaded;
+begin
+  inherited;
+  Init;
+end;
+
+procedure TStoryItem.Updated;
+begin
+  inherited;
+  Init;
+end;
+}
+
+procedure TStoryItem.Init;
+
+  procedure InitGlyph;
+  begin
+    with Glyph do
+    begin
+      Stored := false; //don't store state, should use state from designed .FMX resource
+      SetSubComponent(true);
+      SendToBack;
+      HitTest := false;
+    end;
+  end;
+
+  procedure InitBorder;
+  begin
+    with Border do
+    begin
+      Stored := false; //don't store state, should use state from designed .FMX resource
+      SetSubComponent(true);
+      SendToBack;
+      HitTest := false;
+      Visible := EditMode; //show only in EditMode
+    end;
+  end;
 
   procedure InitDropTarget;
   begin
     with DropTarget do
     begin
-    Stored := False; //don't store state, should use state from designed .FMX resource
-    BringToFront;
-    FilterIndex := 1; //this is the default value
-    Filter := GetLoadFilesFilter;
+      Visible := EditMode; //show only in EditMode
+      FilterIndex := 1; //this is the default value
+      Filter := GetLoadFilesFilter;
+      DropTarget.Align := TAlignLayout.Client;
     end;
   end;
 
 begin
-  inherited;
-  FID := TGUID.NewGuid; //Generate new statistically unique ID
-  FAutoSize := DEFAULT_AUTOSIZE;
+  InitGlyph;
+  InitBorder;
   InitDropTarget;
+end;
+
+constructor TStoryItem.Create(AOwner: TComponent);
+begin
+  inherited;
+  //FID := TGUID.NewGuid; //Generate new statistically unique ID
+  Init;
+end;
+
+destructor TStoryItem.Destroy;
+begin
+  if Assigned(FOptions) then
+    FreeAndNil(FOptions.View);
+
+  inherited; //do last
 end;
 
 function TStoryItem.GetDefaultSize: TSizeF;
@@ -171,7 +241,16 @@ end;
 procedure TStoryItem.SetEditMode(const Value: Boolean);
 begin
   inherited;
-  DropTarget.Visible := Value;
+
+  if Assigned(Border) then
+    Border.Visible := Value;
+
+  if Assigned(DropTarget) then
+    with DropTarget do
+    begin
+      Visible := Value;
+      SendToBack; //keep always under children (setting to Visible seems to BringToFront)
+    end;
 end;
 
 procedure TStoryItem.PlayRandomAudioStoryItem;
@@ -183,16 +262,17 @@ end;
 
 {$REGION '--- PROPERTIES ---'}
 
-{$region 'Id'}
+{$region 'BorderVisible'}
 
-function TStoryItem.GetId: TGUID;
+function TStoryItem.GetBorderVisible: Boolean;
 begin
-
+  result := Border.Visible;
 end;
 
-procedure TStoryItem.SetId(const Value: TGUID);
+procedure TStoryItem.SetBorderVisible(const Value: Boolean);
 begin
-
+  if Assigned(Border) then
+    Border.Visible := Value;
 end;
 
 {$endregion}
@@ -255,6 +335,47 @@ end;
 
 {$endregion}
 
+{$region 'Active'}
+
+function TStoryItem.IsActive: Boolean;
+begin
+  result := Assigned(FActiveStoryItem) and (FActiveStoryItem.View = Self);
+end;
+
+procedure TStoryItem.SetActive(const Value: Boolean);
+begin
+  if (Value = IsActive) then exit; //Important
+
+  if (Value) then //make active
+    begin
+    FActiveStoryItem.Active := false;
+    FActiveStoryItem := Self;
+    end
+  else //make inactive
+    FActiveStoryItem := nil;
+
+  ActiveChanged;
+end;
+
+class procedure TStoryItem.SetActiveStoryItem(const Value: IStoryItem);
+begin
+  if Assigned(Value) then
+    Value.Active := true
+  else if Assigned(FActiveStoryItem) then
+    FActiveStoryItem.Active := false;
+end;
+
+procedure TStoryItem.ActiveChanged;
+begin
+  if Assigned(FOnActiveChanged) then
+    FOnActiveChanged(Self);
+
+  if IsActive and Assigned(FOnActiveStoryItemChanged) then //fire class-level event only for the now active StoryItem
+    FOnActiveStoryItemChanged(Self);
+end;
+
+{$endregion}
+
 {$region 'Hidden'}
 
 function TStoryItem.IsHidden: Boolean;
@@ -275,30 +396,30 @@ end;
 
 {$endregion}
 
-{$region 'Target'}
+{$region 'Anchored'}
 
-function TStoryItem.GetTarget: IStoryItem;
+function TStoryItem.IsAnchored: Boolean;
 begin
-
+  result := Locked;
 end;
 
-procedure TStoryItem.SetTarget(const Value: IStoryItem);
+procedure TStoryItem.SetAnchored(const Value: Boolean);
 begin
-
+  Locked := Value;
 end;
 
 {$endregion}
 
-{$region 'TargetId'}
+{$region 'UrlAction'}
 
-function TStoryItem.GetTargetId: TGUID;
+function TStoryItem.GetUrlAction: String;
 begin
-
+  result := FUrlAction;
 end;
 
-procedure TStoryItem.SetTargetId(const Value: TGUID);
+procedure TStoryItem.SetUrlAction(const Value: String);
 begin
-
+  FUrlAction := Value;
 end;
 
 {$endregion}
@@ -330,10 +451,10 @@ function TStoryItem.GetOptions: IStoryItemOptions;
 begin
   if not Assigned(FOptions) then
     begin
-    var optionsView := TStoryItemOptions.Create(Self);
-    optionsView.Stored := false; //must do else it will try to save the options with the owner of the options frame (which seems to also be used as Root, probably causing to try to store the options frame)
-    FOptions := optionsView;
+    FOptions := TStoryItemOptions.Create(nil); //don't set storyitem as owner, seems to always store it (irrespective of "Stored := false")
+    FOptions.StoryItem := Self;
     end;
+
   result := FOptions;
 end;
 
@@ -343,6 +464,22 @@ end;
 
 {$REGION '--- EVENTS ---'}
 
+{$region 'Keyboard'}
+
+//TODO: fix to work with items that are to be focused only (depending on mode)
+procedure TStoryItem.KeyDown(var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  inherited;
+
+  var CurControl := TControl(Screen.FocusControl);
+  case Key of
+    vkReturn:
+      SelectNext(CurControl);
+    vkTab:
+      SelectNext(CurControl, not (ssShift in Shift));
+  end;
+end;
+
 {
 procedure TStoryItem.CanFocus(var ACanFocus: Boolean);
 begin
@@ -351,37 +488,45 @@ begin
 end;
 }
 
-procedure TStoryItem.Click;
+{$endregion}
+
+{$region 'Mouse'}
+
+procedure TStoryItem.MouseClick(Button: TMouseButton; Shift: TShiftState; X, Y: Single);
 begin
+  Shift := FMouseShift; //TODO: remove if Delphi fixes related bug (more at FMouseShift definition)
+
   inherited; //fire event handlers
-  if EditMode then
-    Options.ShowPopup; //this will create options and assign to FOptions if it's unassigned
+
+  if not EditMode then
+    begin
+    if (FUrlAction <> '') then
+      url_Open_In_Browser(FUrlAction);
+    end
+  else
+    if (ssRight in Shift) then
+      Options.ShowPopup //this will create options and assign to FOptions if it's unassigned
 end;
+
+{$endregion}
+
+{$region DragDrop}
+
+procedure TStoryItem.DropTargetDropped(const Filepaths: array of string);
+begin
+  inherited;
+  Load(Filepaths);
+end;
+
+{$endregion}
+
+{$region 'Touch'}
 
 procedure TStoryItem.Tap(const Point: TPointF);
 begin
   inherited; //fire event handlers
   if EditMode then
     Options.ShowPopup; //this will create options and assign to FOptions if it's unassigned
-end;
-
-procedure TStoryItem.HandleParentNavigatedToChanged;
-begin
-  //TODO
-end;
-
-{$region 'Drop target'}
-
-procedure TStoryItem.DropTargetDragOver(Sender: TObject; const Data: TDragObject; const Point: TPointF; var Operation: TDragOperation);
-begin
-  if EditMode then
-    Operation := TDragOperation.Copy;
-end;
-
-procedure TStoryItem.DropTargetDropped(Sender: TObject; const Data: TDragObject; const Point: TPointF);
-begin
-  if EditMode then
-    Load(Data.Files);
 end;
 
 {$endregion}

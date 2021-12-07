@@ -1,14 +1,16 @@
+//Description: READ-COM PanelStoryItem View
+//Author: George Birbilis (http://zoomicon.com)
+
 unit READCOM.Views.PanelStoryItem;
 
 interface
 
 uses
-  READCOM.Messages.Models, //for IMessageSingleValue
   READCOM.App.Models, //for IPanelStoryItem, IStoreable
   READCOM.Views.StoryItem, //for TStoryItem
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
   FMX.Types, FMX.Graphics, FMX.Controls, FMX.Forms, FMX.Dialogs, FMX.StdCtrls,
-  Zoomicon.Manipulator, FMX.ExtCtrls;
+  FMX.ExtCtrls, FMX.Objects, FMX.SVGIconImage;
 
 type
   {A PanelStoryItem is the only thing that takes part in navigation [TAB flow] when not in edit mode}
@@ -17,8 +19,11 @@ type
 
     protected
       procedure DoEditModeChange(const Value: Boolean);
+      procedure SetEditMode(const Value: Boolean); override;
 
     public
+      constructor Create(AOwner: TComponent); override;
+
       { IStoreable }
       function GetLoadFilesFilter: String; override;
       procedure Load(const Filepath: String); override;
@@ -57,23 +62,39 @@ implementation
     READCOM.Views.BitmapImageStoryItem, //for TBitmapImageStoryItem
     READCOM.Views.VectorImageStoryItem, //for TVectorImageStoryItem
     READCOM.Views.AudioStoryItem, //for TAudioStoryItem
+    READCOM.Views.TextStoryItem, //for TTextStoryItem
     System.IOUtils; //for TPath
 
 {$R *.fmx}
 
 { TPanelStoryItem }
 
+constructor TPanelStoryItem.Create(AOwner: TComponent);
+begin
+  inherited;
+  BorderVisible := true;
+  Navigatable := true;
+end;
+
 procedure TPanelStoryItem.DoEditModeChange(const Value: Boolean);
 begin
-  inherited
+  inherited;
+
   TabStop := true; //always do tab stop navigation between TStoryFrames (irrespective of EditMode)
+end;
+
+procedure TPanelStoryItem.SetEditMode(const Value: Boolean);
+begin
+  inherited;
+
+  BorderVisible := true; //always show Border
 end;
 
 {$region 'IStoreable'}
 
 function TPanelStoryItem.GetLoadFilesFilter: String;
 begin
-  result := FILTER_READCOM + '|' + FILTER_SVG + '|' + FILTER_PNG_JPEG_JPG + '|' + FILTER_MP3 {+ '|' + FILTER_TXT};
+  result := 'READ-COM Files, Images, Audio, Text|*.readcom;*.png;*.jpg;*.jpeg;*.svg;*.mp3; *.txt' + '|' + FILTER_READCOM + '|' + FILTER_SVG + '|' + FILTER_PNG_JPEG_JPG + '|' + FILTER_MP3 + '|' + FILTER_TXT;
 end;
 
 function RemoveNonAllowedIdentifierChars(const s: String): String;
@@ -106,6 +127,8 @@ begin
     StoryItemClass := TBitmapImageStoryItem
   else if (FileExt = EXT_MP3) then
     StoryItemClass := TAudioStoryItem
+  else if (FileExt = EXT_TXT) then
+    StoryItemClass := TTextStoryItem
   else
     exit;
 
@@ -119,6 +142,7 @@ begin
   StoryItem.Position.Point := PointF(Size.Width/2 - ItemSize.Width/2, Size.Height/2 - ItemSize.Height/2); //not creating TPosition objects to avoid leaking (TPointF is a record)
 
   StoryItem.Parent := Self;
+  StoryItem.BringToFront; //load as front-most
 end;
 
 procedure TPanelStoryItem.Load(const Filepaths: array of String);

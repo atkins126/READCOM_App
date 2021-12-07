@@ -1,3 +1,6 @@
+//Description: READ-COM ImageStoryItem View
+//Author: George Birbilis (http://zoomicon.com)
+
 unit READCOM.Views.ImageStoryItem;
 
 interface
@@ -8,7 +11,7 @@ uses
   FMX.Objects, //for TImage
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
   FMX.Types, FMX.Graphics, FMX.Controls, FMX.Forms, FMX.Dialogs, FMX.StdCtrls,
-  FMX.ExtCtrls, Zoomicon.Manipulator;
+  FMX.ExtCtrls, FMX.SVGIconImage;
 
 type
   TImageStoryItem = class abstract(TStoryItem, IImageStoryItem)

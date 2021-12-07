@@ -2,15 +2,12 @@ program READCOM.App;
 
 uses
   SysUtils,
-  CodeSiteLogging,
   System.StartUpCopy,
   FMX.Forms,
-  iPub.Rtl.Messaging in '..\3rdPartyLib\ipub-messaging-main\iPub.Rtl.Messaging.pas',
-  Zoomicon.Manipulator in '..\Zoomicon.Manipulator\Zoomicon.Manipulator.pas' {Manipulator: TFrame},
+  CodeSiteLogging,
   READCOM.App.Models in 'READCOM.App.Models.pas',
-  READCOM.Messages.Classes in 'Messages\READCOM.Messages.Classes.pas',
-  READCOM.Messages.Models in 'Messages\READCOM.Messages.Models.pas',
   READCOM.Views.Options.StoryItemOptions in 'Views\Options\READCOM.Views.Options.StoryItemOptions.pas' {StoryItemOptions: TFrame},
+  READCOM.Views.Options.BitmapImageStoryItemOptions in 'Views\Options\READCOM.Views.Options.BitmapImageStoryItemOptions.pas' {BitmapImageStoryItemOptions: TFrame},
   READCOM.Views.StoryItem in 'Views\READCOM.Views.StoryItem.pas' {StoryItem: TFrame},
   READCOM.Views.ImageStoryItem in 'Views\READCOM.Views.ImageStoryItem.pas' {ImageStoryItem: TFrame},
   READCOM.Views.BitmapImageStoryItem in 'Views\READCOM.Views.BitmapImageStoryItem.pas' {BitmapImageStoryItem: TFrame},
@@ -19,53 +16,92 @@ uses
   READCOM.Views.PanelStoryItem in 'Views\READCOM.Views.PanelStoryItem.pas' {PanelStoryItem: TFrame},
   READCOM.Views.Menu.HUD in 'Views\READCOM.Views.Menu.HUD.pas' {StoryHUD: TFrame},
   READCOM.Views.Main in 'Views\READCOM.Views.Main.pas' {MainForm},
-  ObjectDebuggerFMXForm in '..\3rdPartyLib\object-debugger-for-firemonkey\DemoDesktop\ObjectDebuggerFMXForm.pas' {ObjectDebuggerFMXForm},
-  ObjectDebuggerFMXFrame in '..\3rdPartyLib\object-debugger-for-firemonkey\ObjectDebuggerFMXFrame.pas' {FMXObjectDebuggerFrame: TFrame},
-  FormMessage in '..\3rdPartyLib\object-debugger-for-firemonkey\FormMessage.pas' {MessageForm},
-  Zoomicon.Media.Classes in '..\Zoomicon.Media\Zoomicon.Media.Classes.pas',
+  Zoomicon.Media.FMX in '..\Zoomicon.Media\Zoomicon.Media.FMX.pas',
   Zoomicon.Media.Models in '..\Zoomicon.Media\Zoomicon.Media.Models.pas',
   Zoomicon.Generics.Functors in '..\Zoomicon.Generics\Functors\Zoomicon.Generics.Functors.pas',
   Zoomicon.Generics.Collections in '..\Zoomicon.Generics\Collections\Zoomicon.Generics.Collections.pas',
-  FMX.ApplicationHelper in 'FMX.ApplicationHelper.pas',
   READCOM.App.Globals in 'READCOM.App.Globals.pas' {DataModule1: TDataModule},
-  Zoomicon.FMX.Utils in '..\Zoomicon.Zooming\Zoomicon.FMX.Utils.pas',
+  Zoomicon.Puzzler.Classes in '..\Zoomicon.Puzzler\Zoomicon.Puzzler.Classes.pas',
+  Zoomicon.Puzzler.Models in '..\Zoomicon.Puzzler\Zoomicon.Puzzler.Models.pas',
+  READCOM.Views.About in 'Views\READCOM.Views.About.pas' {AboutFrame: TFrame},
+  u_UrlOpen in 'u_UrlOpen.pas',
+  READCOM.Views.TextStoryItem in 'Views\READCOM.Views.TextStoryItem.pas' {TextStoryItem: TFrame},
+  Zoomicon.Text in '..\Zoomicon.Text\Zoomicon.Text.pas',
+  FormMessage in '..\3rdPartyLib\object-debugger-for-firemonkey\FormMessage.pas' {MessageForm},
+  ObjectDebuggerFMXFrame in '..\3rdPartyLib\object-debugger-for-firemonkey\ObjectDebuggerFMXFrame.pas' {FMXObjectDebuggerFrame: TFrame},
+  ObjectDebuggerFMXForm in '..\3rdPartyLib\object-debugger-for-firemonkey\DemoDesktop\ObjectDebuggerFMXForm.pas' {ObjectDebuggerFMXForm},
+  Zoomicon.Introspection.FMX.StructureView in '..\Zoomicon.Introspection\Zoomicon.Introspection.FMX.StructureView.pas' {StructureView: TFrame},
+  Zoomicon.Manipulation.FMX.CustomManipulator in '..\Zoomicon.Manipulation\Zoomicon.Manipulation.FMX.CustomManipulator.pas' {CustomManipulator: TFrame},
+  Zoomicon.Manipulation.FMX.Manipulator in '..\Zoomicon.Manipulation\Zoomicon.Manipulation.FMX.Manipulator.pas' {Manipulator: TFrame},
+  Zoomicon.Manipulation.FMX.Selector in '..\Zoomicon.Manipulation\Zoomicon.Manipulation.FMX.Selector.pas',
+  Zoomicon.Zooming.FMX in '..\Zoomicon.Zooming\Zoomicon.Zooming.FMX.pas',
+  Zoomicon.Zooming.FMX.ZoomFrame in '..\Zoomicon.Zooming\Zoomicon.Zooming.FMX.ZoomFrame.pas' {ZoomFrame: TFrame},
   Zoomicon.Zooming.Models in '..\Zoomicon.Zooming\Zoomicon.Zooming.Models.pas',
-  Zoomicon.Zooming.ZoomFrame in '..\Zoomicon.Zooming\Zoomicon.Zooming.ZoomFrame.pas' {ZoomFrame: TFrame};
+  Zoomicon.Helpers.FMX.Controls.ControlHelpers in '..\Zooming.Helpers\Zoomicon.Helpers.FMX.Controls\Zoomicon.Helpers.FMX.Controls.ControlHelpers.pas',
+  Zoomicon.Helpers.FMX.Forms.ApplicationHelper in '..\Zooming.Helpers\Zoomicon.Helpers.FMX.Forms\Zoomicon.Helpers.FMX.Forms.ApplicationHelper.pas',
+  Zoomicon.Helpers.FMX.Layouts.ScaledLayoutHelpers in '..\Zooming.Helpers\Zoomicon.Helpers.FMX.Layouts\Zoomicon.Helpers.FMX.Layouts.ScaledLayoutHelpers.pas',
+  Zoomicon.Helpers.FMX.Layouts.ScrollBoxHelpers in '..\Zooming.Helpers\Zoomicon.Helpers.FMX.Layouts\Zoomicon.Helpers.FMX.Layouts.ScrollBoxHelpers.pas',
+  Zoomicon.Helpers.RTL.ClassListHelpers in '..\Zooming.Helpers\Zoomicon.Helpers.RTL\Zoomicon.Helpers.RTL.ClassListHelpers.pas';
 
 {$R *.res}
 
-begin
-  {$IFDEF DEBUG}
-  CodeSite.Enabled := CodeSite.Installed;
-  if CodeSite.Enabled then
+{$IFDEF DEBUG}
+
+  procedure EnableCodeSite;
   begin
+    CodeSite.Enabled := CodeSite.Installed;
     if CodeSite.Enabled then
     begin
-      var Destination := TCodeSiteDestination.Create(Application);
-      with Destination do
-        begin
-        with LogFile do
+      if CodeSite.Enabled then
+      begin
+        var Destination := TCodeSiteDestination.Create(Application);
+        with Destination do
           begin
-          Active := True;
-          FileName := ChangeFileExt(ExtractFileName(Application.ExeName), '.csl');
-          FilePath := '$(MyDocs)\My CodeSite Files\Logs\';
+          with LogFile do
+            begin
+            Active := True;
+            FileName := ChangeFileExt(ExtractFileName(Application.ExeName), '.csl');
+            FilePath := '$(MyDocs)\My CodeSite Files\Logs\';
+            end;
+          Viewer.Active := True; // also show Live Viewer
           end;
-        Viewer.Active := True; // also show Live Viewer
-        end;
-      CodeSite.Destination := Destination;
-      CodeSite.Clear
+        CodeSite.Destination := Destination;
+        CodeSite.Clear
+      end;
     end;
   end;
+
+{$ENDIF}
+
+begin
+  {$IFDEF DEBUG}
+  EnableCodeSite;
+  ReportMemoryLeaksOnShutdown := True;
   {$ELSE}
   CodeSite.Enabled := False;
   {$ENDIF}
-  ReportMemoryLeaksOnShutdown := True; //TODO: remove in production?
+
   Randomize; //initializes the built-in random number generator with a random value (obtained from the system clock)
+
   //ApplicationHandleException := //...
   //ApplicationShowException := //...
+
   Application.Initialize;
+
   Application.CreateForm(TDataModule1, DataModule1);
   Application.CreateForm(TMainForm, MainForm);
+  Application.CreateForm(TMessageForm, MessageForm);
+  {$IFDEF DEBUG}
+  //Application.CreateForm(TMessageForm, MessageForm);
+  //Application.CreateForm(TObjectDebuggerFMXForm, ObjectDebuggerFMXForm1);
   //ObjectDebuggerFMXForm1.Show;
-  Application.Run;
+  {$ENDIF}
+
+  try
+    Application.Run;
+  finally
+    {$IFDEF DEBUG}
+    //FreeAndNil(ObjectDebuggerFMXForm1); //the object debugger anyway seems to be leaking objects (if different objects are selected)
+    {$ENDIF}
+  end;
 end.

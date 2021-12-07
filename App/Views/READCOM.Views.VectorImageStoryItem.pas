@@ -1,3 +1,6 @@
+//Description: READ-COM VectorImageStoryItem View
+//Author: George Birbilis (http://zoomicon.com)
+
 unit READCOM.Views.VectorImageStoryItem;
 
 interface
@@ -7,7 +10,7 @@ uses
   READCOM.Views.ImageStoryItem, //for TImageStoryItem
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
   FMX.Types, FMX.Graphics, FMX.Controls, FMX.Forms, FMX.Dialogs, FMX.StdCtrls,
-  FMX.Objects, FMX.SVGIconImage, Zoomicon.Manipulator,
+  FMX.Objects, FMX.SVGIconImage,
   FMX.ExtCtrls, FMX.Controls.Presentation;
 
 const
@@ -16,7 +19,9 @@ const
 
 type
   TVectorImageStoryItem = class(TImageStoryItem, IVectorImageStoryItem, IImageStoryItem, IStoryItem, IStoreable)
-    SVGIconImage: TSVGIconImage;
+  private
+    function GetSVGText: String;
+    procedure SetSVGText(const Value: String);
 
   //--- Methods ---
 
@@ -42,8 +47,9 @@ type
 
   published
     property Image: TImage read GetImage stored false; //overrides ancestor's "write" and "stored" settings
-    property SVGImage: TSVGIconImage read GetSVGImage write SetSVGImage default nil;
-
+    property SVGImage: TSVGIconImage read GetSVGImage write SetSVGImage stored false default nil;
+    property SVGText: String read GetSVGText write SetSVGText;
+    property AutoSize default true;
   end;
 
   procedure Register;
@@ -57,8 +63,7 @@ implementation
 constructor TVectorImageStoryItem.Create(AOnwer: TComponent);
 begin
   inherited;
-  SVGIconImage.SetSubComponent(true);
-  SVGIconImage.Stored := false; //don't store state, should use state from designed .FMX resource
+  FAutoSize := true;
 end;
 
 {$region 'IStoreable'}
@@ -78,12 +83,18 @@ end;
 
 procedure TVectorImageStoryItem.LoadSVG(const Stream: TStream);
 begin
-  var bitmap := SVGIconImage.MultiResBitmap[0] as TSVGIconFixedBitmapItem;
-  bitmap.SVG.LoadFromStream(Stream);
+  if FAutoSize then
+    Glyph.Align := TAlignLayout.None;
+  var bitmap := Glyph.MultiResBitmap[0] as TSVGIconFixedBitmapItem;
+  bitmap.SVG.LoadFromStream(Stream); //TODO: should fix to read size info from SVG
   //bitmap.SVG.FixedColor := TAlphaColorRec.Red;
   bitmap.DrawSVGIcon;
   if FAutoSize then
-    SetSize(bitmap.Width, bitmap.Height);
+    begin
+    //SetSize(bitmap.Width, bitmap.Height); //TODO
+    SetSize(100,100);
+    Glyph.Align := TAlignLayout.Contents;
+    end;
 end;
 
 {$endregion}
@@ -94,7 +105,7 @@ end;
 
 function TVectorImageStoryItem.GetImage: TImage;
 begin
-  result := SVGIconImage;
+  result := Glyph;
 end;
 
 procedure TVectorImageStoryItem.SetImage(const Value: TImage);
@@ -108,12 +119,33 @@ end;
 
 function TVectorImageStoryItem.GetSVGImage: TSVGIconImage;
 begin
-  result := SVGIconImage;
+  result := Glyph;
 end;
 
 procedure TVectorImageStoryItem.SetSVGImage(const Value: TSVGIconImage);
 begin
-  (SVGIconImage.MultiResBitmap[0] as TSVGIconFixedBitmapItem).SVGText := (Value.MultiResBitmap[0] as TSVGIconFixedBitmapItem).SVGText;
+  SVGText := (Value.MultiResBitmap[0] as TSVGIconFixedBitmapItem).SVGText; //this will also set Size
+end;
+
+{$endregion}
+
+{$region 'SVGText'}
+
+function TVectorImageStoryItem.GetSVGText: String;
+begin
+  result := (Glyph.MultiResBitmap[0] as TSVGIconFixedBitmapItem).SVGText;
+end;
+
+procedure TVectorImageStoryItem.SetSVGText(const Value: String);
+begin
+  if FAutoSize then
+    Glyph.Align := TAlignLayout.None;
+  (Glyph.MultiResBitmap[0] as TSVGIconFixedBitmapItem).SVGText := Value;
+  if FAutoSize then
+    begin
+    Size.Size := Glyph.Size.Size;
+    Glyph.Align := TAlignLayout.Contents;
+    end;
 end;
 
 {$endregion}
