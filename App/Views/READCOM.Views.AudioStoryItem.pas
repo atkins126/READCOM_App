@@ -15,10 +15,15 @@ uses
 
 const
   EXT_MP3 = '.mp3';
-  FILTER_MP3 = 'MP3 audio (*.mp3)|*.mp3';
+  FILTER_AUDIO_TITLE = 'Audio (*.mp3)';
+  FILTER_AUDIO_EXTS = '*' + EXT_MP3;
+  FILTER_AUDIO = FILTER_AUDIO_TITLE + '|' + FILTER_AUDIO_EXTS;
 
 type
-  TAudioStoryItem = class(TStoryItem , IAudioStoryItem, IStoryItem, IStoreable)
+
+  {$REGION 'TAudioStoryItem' --------------------------------------------------------}
+
+  TAudioStoryItem = class(TStoryItem, IAudioStoryItem, IStoryItem, IStoreable)
     GlyphImage: TSVGIconImage;
     MediaPlayer: TMediaPlayerEx;
     procedure FrameTap(Sender: TObject; const Point: TPointF);
@@ -42,29 +47,36 @@ type
     {$endregion}
 
   protected
-    { Muted }
+    FPlayedOnce: Boolean;
+    FIsPlayOnce: Boolean;
+
+    {DefaultSize}
+    function GetDefaultSize: TSizeF; override;
+
+    {Muted}
     function IsMuted: Boolean;
     procedure SetMuted(const Value: Boolean);
 
-    { AutoPlaying }
+    {AutoPlaying}
     function IsAutoPlaying: Boolean;
     procedure SetAutoPlaying(const Value: Boolean);
 
-    { Looping }
+    {Looping}
     function IsLooping: Boolean;
     procedure SetLooping(const Value: Boolean);
 
-    { PlayOnce }
+    {PlayOnce}
     function IsPlayOnce: Boolean;
     procedure SetPlayOnce(const Value: Boolean);
 
-    { Audio }
+    {Audio}
     function GetAudio: TMediaPlayerEx;
     procedure SetAudio(const Value: TMediaPlayerEx);
 
   //--- Properties ---
 
   published
+    property Hidden default true; //set to true in overriden constructor
     property Muted: Boolean read IsMuted write SetMuted stored false; //shouldn't store this so that interacting with the story won't store it disabled
     property AutoPlaying: Boolean read IsAutoPlaying write SetAutoPlaying;
     property PlayOnce: Boolean read IsPlayOnce write SetPlayOnce;
@@ -72,26 +84,43 @@ type
     //TODO: persist the audio data
   end;
 
+  {$ENDREGION .......................................................................}
+
+  {$REGION 'TAudioStoryItemFactory' -------------------------------------------------}
+
+  TAudioStoryItemFactory = class(TInterfacedObject, IStoryItemFactory)
+    function New(const AOwner: TComponent = nil): IStoryItem;
+  end;
+
+  {$ENDREGION .......................................................................}
+
   procedure Register;
 
 implementation
+  uses
+    READCOM.Views.StoryItemFactory; //for StoryItemFactories, StoryItemAddFileFilter
 
 {$R *.fmx}
 
-{ TAudioStoryItem }
+{$REGION 'TAudioStoryItem'}
 
 constructor TAudioStoryItem.Create(AOwner: TComponent);
 begin
   inherited;
+
+  FPlayedOnce := false;
+
   MediaPlayer.Stored := false; //don't store state, should use state from designed .FMX resource
   GlyphImage.Stored := false; //don't store state, should use state from designed .FMX resource
+
+  Hidden := true;
 end;
 
 {$region 'IStoreable'}
 
 function TAudioStoryItem.GetLoadFilesFilter: String;
 begin
-  result := FILTER_MP3;
+  result := FILTER_AUDIO;
 end;
 
 procedure TAudioStoryItem.Load(const Stream: TStream; const ContentFormat: String = EXT_READCOM);
@@ -122,7 +151,11 @@ end;
 
 procedure TAudioStoryItem.Play;
 begin
-  MediaPlayer.Play; //TODO: if Disabled don't play (play random child?)
+  if (not FIsPlayOnce) or (not FPlayedOnce) then //equivalent to "if not (FIsPlayOnce and FPlayedOnce)"
+  begin
+    MediaPlayer.Play; //TODO: if Disabled don't play (play random child?)
+    FPlayedOnce := true;
+  end;
 end;
 
 procedure TAudioStoryItem.Pause;
@@ -134,6 +167,17 @@ procedure TAudioStoryItem.Stop;
 begin
   MediaPlayer.Stop; //this only Pauses...
   MediaPlayer.CurrentTime := 0; //...so we also reset CurrentTime to 0
+end;
+
+{$endregion}
+
+{$REGION 'PROPERTIES' ---------------------}
+
+{$region 'DefaultSize'}
+
+function TAudioStoryItem.GetDefaultSize: TSizeF;
+begin
+  Result := TSizeF.Create(64, 64);
 end;
 
 {$endregion}
@@ -184,12 +228,13 @@ end;
 
 function TAudioStoryItem.IsPlayOnce: Boolean;
 begin
-  //TODO
+  result := FIsPlayOnce;
 end;
 
 procedure TAudioStoryItem.SetPlayOnce(const Value: Boolean);
 begin
-
+  FIsPlayOnce := Value;
+  FPlayedOnce := false; //reset the FPlayedOnce gate field
 end;
 
 {$endregion}
@@ -208,6 +253,8 @@ end;
 
 {$endregion}
 
+{$ENDREGION ...............................}
+
 {$REGION 'EVENTS'}
 
 procedure TAudioStoryItem.FrameClick(Sender: TObject);
@@ -220,6 +267,17 @@ procedure TAudioStoryItem.FrameTap(Sender: TObject; const Point: TPointF);
 begin
   inherited;
   Play;
+end;
+
+{$ENDREGION}
+
+{$ENDREGION}
+
+{$REGION 'TAudioStoryItemFactory'}
+
+function TAudioStoryItemFactory.New(const AOwner: TComponent = nil): IStoryItem;
+begin
+  result := TAudioStoryItem.Create(AOwner);
 end;
 
 {$ENDREGION}
@@ -237,6 +295,9 @@ begin
 end;
 
 initialization
+  StoryItemFactories.Add([EXT_MP3], TAudioStoryItemFactory.Create);
+  AddStoryItemFileFilter(FILTER_AUDIO_TITLE, FILTER_AUDIO_EXTS);
+
   RegisterClasses; //don't call Register here, it's called by the IDE automatically on a package installation (fails at runtime)
 
 end.

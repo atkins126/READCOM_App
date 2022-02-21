@@ -3,39 +3,46 @@ unit READCOM.Views.Options.StoryItemOptions;
 interface
 
 uses
-  System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
+  READCOM.App.Globals, //for SVGIconImageList, SVGIconImageList1
+  READCOM.App.Models, //for IStoryItemOptions
+  System.SysUtils, System.Types,
+  System.UITypes, //for TOpenOption
+  System.Classes, System.Variants,
   FMX.Types, FMX.Graphics, FMX.Controls, FMX.Forms, FMX.Dialogs, FMX.StdCtrls,
   FMX.Layouts,
-  READCOM.App.Models, FMX.Controls.Presentation, System.ImageList,
-  FMX.ImgList, FMX.SVGIconImageList, System.Actions, FMX.ActnList, FMX.Edit; //for IStoryItemOptions
+  FMX.Controls.Presentation, System.ImageList,
+  FMX.ImgList, FMX.SVGIconImageList, System.Actions, FMX.ActnList, FMX.Edit;
 
 type
   TStoryItemOptions = class(TFrame, IStoryItemOptions)
-    GridPanelLayout: TGridPanelLayout;
-    btnDelete: TSpeedButton;
-    btnLoad: TSpeedButton;
-    OpenDialog: TOpenDialog;
-    btnSave: TSpeedButton;
+    AddDialog: TOpenDialog;
     SaveDialog: TSaveDialog;
-    SVGIconImageList: TSVGIconImageList;
     ActionList: TActionList;
-    actionDelete: TAction;
-    actionOpen: TAction;
+    actionLoad: TAction;
     actionSave: TAction;
-    actionAnchor: TAction;
-    btnAnchor: TSpeedButton;
-    Panel1: TPanel;
+    panelUrlAction: TPanel;
     glyphUrlAction: TGlyph;
     editUrlAction: TEdit;
     actionChangeUrlAction: TAction;
-    procedure actionAnchorExecute(Sender: TObject);
-    procedure actionDeleteExecute(Sender: TObject);
-    procedure actionOpenExecute(Sender: TObject);
+    actionAdd: TAction;
+    layoutButtons: TFlowLayout;
+    btnToggleAnchored: TSpeedButton;
+    btnAdd: TSpeedButton;
+    btnLoad: TSpeedButton;
+    btnSave: TSpeedButton;
+    OpenDialog: TOpenDialog;
+    btnToggleStoryPoint: TSpeedButton;
+    btnToggleHome: TSpeedButton;
+    procedure actionToggleAnchoredExecute(Sender: TObject);
+    procedure actionLoadExecute(Sender: TObject);
     procedure actionSaveExecute(Sender: TObject);
     procedure actionChangeUrlActionExecute(Sender: TObject);
     procedure Glyph1Tap(Sender: TObject; const Point: TPointF);
     procedure editUrlActionChangeTracking(Sender: TObject);
     procedure editUrlActionMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
+    procedure actionAddExecute(Sender: TObject);
+    procedure actionToggleStoryPointExecute(Sender: TObject);
+    procedure actionToggleHomeExecute(Sender: TObject);
 
   protected
     FStoryItem: IStoryItem;
@@ -49,32 +56,32 @@ type
     {View}
     function GetView: TControl;
 
-    {DeleteVisible}
-    function IsDeleteVisible: Boolean;
-    procedure SetDeleteVisible(const Value: Boolean);
-
   public
     destructor Destroy; override;
 
     procedure ShowPopup; //TODO: use PopupVisible boolean property instead
     procedure HidePopup;
+
+    function ActAdd: Boolean;
+    function ActLoad: Boolean;
+    function ActSave: Boolean;
+
     property Popup: TPopup read FPopup write FPopup stored false;
 
   published
     property View: TControl read GetView stored false;
     property StoryItem: IStoryItem read GetStoryItem write SetStoryItem stored false;
-    property DeleteVisible: Boolean read IsDeleteVisible write SetDeleteVisible stored false;
   end;
 
 implementation
   uses
-    FMX.DialogService.Async,
+    FMX.DialogService.Async, //for TDialogServiceAsync
     FMX.Objects, //for TImageWrapMode
     FMX.Styles.Objects; //for TStyleObject
 
 {$R *.fmx}
 
-{ TStoryItemOptions }
+{TStoryItemOptions}
 
 destructor TStoryItemOptions.Destroy;
 begin
@@ -110,7 +117,9 @@ begin
   with FStoryItem do
   begin
     editUrlAction.Text := GetUrlAction;
-    actionAnchor.Checked := IsAnchored;
+    btnToggleHome.IsPressed := Home;
+    btnToggleStoryPoint.IsPressed := StoryPoint;
+    btnToggleAnchored.IsPressed := Anchored;
   end;
 end;
 
@@ -131,53 +140,81 @@ end;
 
 {$endregion}
 
-{$region 'DeleteVisible'}
-
-function TStoryItemOptions.IsDeleteVisible: Boolean;
-begin
-  result := btnDelete.Visible;
-end;
-
-procedure TStoryItemOptions.SetDeleteVisible(const Value: Boolean);
-begin
-  btnDelete.Visible := Value;
-end;
-
 {$endregion}
 
 {$region 'Actions'}
 
-procedure TStoryItemOptions.actionAnchorExecute(Sender: TObject);
+function TStoryItemOptions.ActAdd: Boolean;
 begin
-  actionAnchor.Checked := not actionAnchor.Checked;
-  StoryItem.SetAnchored(actionAnchor.Checked);
-  ShowPopup;
-end;
-
-procedure TStoryItemOptions.actionDeleteExecute(Sender: TObject);
-begin
-  FreeAndNil(GetStoryItem As TComponent);
-end;
-
-procedure TStoryItemOptions.actionOpenExecute(Sender: TObject);
-begin
-  with OpenDialog do
+  with AddDialog do
   begin
-    Filter := StoryItem.GetLoadFilesFilter;
-    if Execute then //TODO: see if supported on Android (https://stackoverflow.com/questions/69138504/why-does-fmx-topendialog-not-work-in-android)
-      StoryItem.Load(Files.ToStringArray);
+    DefaultExt := EXT_READCOM;
+    Filter := StoryItem.GetAddFilesFilter;
+    //Options := Options + [TOpenOption.ofAllowMultiSelect]; //Multi-selection (set in designer)
+    result := Execute; //TODO: see if supported on Android (https://stackoverflow.com/questions/69138504/why-does-fmx-topendialog-not-work-in-android)
+    if result then
+      StoryItem.Add(Files.ToStringArray);
   end;
 end;
 
-procedure TStoryItemOptions.actionSaveExecute(Sender: TObject);
+function TStoryItemOptions.ActLoad: Boolean;
+begin
+  with OpenDialog do
+  begin
+    DefaultExt := EXT_READCOM;
+    Filter := StoryItem.GetLoadFilesFilter;
+    //Options := Options - [TOpenOption.ofAllowMultiSelect]; //Single-selection (set in designer)
+    result := Execute; //TODO: see if supported on Android (https://stackoverflow.com/questions/69138504/why-does-fmx-topendialog-not-work-in-android)
+    if result then
+      StoryItem.Load(Filename); //TODO: seems to cause error (on MouseUp at Form) due to MouseCapture (probably from the popup) not having been released for some (child?) item that gets freed. Should try to get the Root (the form) and do SetCapture(nil) on it or similar, or try to get Capture to us here and release immediately (OR MAYBE THERE IS SOME OTHER ERROR AND WE SHOULD TRY TO REPLACE THE WHOLE ITEM VIA ITS PARENT INSTEAD OF LOADING CONTENT IN IT REMOVING ITS CHILDREN FIRST - THAT WAY WE'LL BE ABLE TO REPLACE AN ITEM WITH ANY OTHER ITEM)
+  end;
+end;
+
+function TStoryItemOptions.ActSave: Boolean;
 begin
   with SaveDialog do
   begin
     DefaultExt := EXT_READCOM;
     Filter := StoryItem.GetSaveFilesFilter;
-    if Execute then //TODO: see if supported on Android (https://stackoverflow.com/questions/69138504/why-does-fmx-topendialog-not-work-in-android)
+    result := Execute; //TODO: see if supported on Android (https://stackoverflow.com/questions/69138504/why-does-fmx-topendialog-not-work-in-android)
+    if result then
       StoryItem.Save(Filename);
   end;
+end;
+
+///
+
+procedure TStoryItemOptions.actionToggleHomeExecute(Sender: TObject);
+begin
+  StoryItem.SetHome(btnToggleHome.IsPressed);
+  ShowPopup; //show popup again to make the toggle evident
+end;
+
+procedure TStoryItemOptions.actionToggleStoryPointExecute(Sender: TObject);
+begin
+  StoryItem.SetStoryPoint(btnToggleStoryPoint.IsPressed);
+  ShowPopup; //show popup again to make the toggle evident
+end;
+
+procedure TStoryItemOptions.actionToggleAnchoredExecute(Sender: TObject);
+begin
+  StoryItem.SetAnchored(btnToggleAnchored.IsPressed);
+  ShowPopup; //show popup again to make the toggle evident
+end;
+
+procedure TStoryItemOptions.actionAddExecute(Sender: TObject);
+begin
+  actAdd;
+end;
+
+procedure TStoryItemOptions.actionLoadExecute(Sender: TObject);
+begin
+  actLoad;
+end;
+
+procedure TStoryItemOptions.actionSaveExecute(Sender: TObject);
+begin
+  actSave;
 end;
 
 procedure TStoryItemOptions.actionChangeUrlActionExecute(Sender: TObject);
@@ -224,7 +261,10 @@ begin
   CheckCreatePopup;
 
   if Assigned(FPopup) then
+    begin
     FPopup.IsOpen := true;
+    StoryItem := StoryItem; //cause re-init of toggle buttons //Note: Have to do it after opening the popup else SpeedButtons that had StaysPressed=true and Pressed=true don't appear pressed till one of them is clicked
+    end;
 end;
 
 procedure TStoryItemOptions.HidePopup;

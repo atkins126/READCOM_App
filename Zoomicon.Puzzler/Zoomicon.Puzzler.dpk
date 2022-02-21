@@ -25,12 +25,14 @@ package Zoomicon.Puzzler;
 {$IMAGEBASE $400000}
 {$DEFINE DEBUG}
 {$ENDIF IMPLICITBUILDING}
+
 {$IMPLICITBUILD ON}
 
 requires
   rtl,
   fmx,
-  Zoomicon.Generics;
+  Zoomicon.Generics,
+  Zoomicon.Helpers.FMX;
 
 contains
   Zoomicon.Puzzler.Models in 'Zoomicon.Puzzler.Models.pas',

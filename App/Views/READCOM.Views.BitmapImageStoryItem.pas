@@ -17,25 +17,32 @@ const
   EXT_PNG = '.png';
   EXT_JPG = '.jpg';
   EXT_JPEG = '.jpeg';
-  FILTER_PNG = 'PNG bitmap images (*.png)|*.png';
-  FILTER_JPEG_JPG = 'JPEG bitmap images (*.jpg, *.jpeg)|*.jpg;*.jpeg';
-  FILTER_PNG_JPEG_JPG = FILTER_PNG + '|' + FILTER_JPEG_JPG;
+  FILTER_BITMAP_IMAGE_TITLE = 'Bitmap images (*.png, *.jpg, *.jpeg)';
+  FILTER_BITMAP_IMAGE_EXTS = '*' + EXT_PNG + ';*' + EXT_JPG + ';*' + EXT_JPEG;
+  FILTER_BITMAP_IMAGE = FILTER_BITMAP_IMAGE_TITLE + '|' + FILTER_BITMAP_IMAGE_EXTS;
 
 type
+
+  {$REGION 'TBitmapImageStoryItem' ----------------------------------------------}
+
   TBitmapImageStoryItem = class(TImageStoryItem, IBitmapImageStoryItem, IImageStoryItem, IStoryItem, IStoreable)
     ImageControl: TImage;
 
   //--- Methods ---
 
   protected
-    { Image }
+    {Image}
     function GetImage: TImage; override;
     procedure SetImage(const Value: TImage); override;
+    {Options}
+    function GetOptions: IStoryItemOptions; override;
+    {EditMode}
+    procedure SetEditMode(const Value: Boolean); override;
+
+    procedure Loaded; override;
 
   public
     constructor Create(AOwner: TComponent); override;
-
-    function GetOptions: IStoryItemOptions; override; //TODO: make protected? (and in ancestor)
 
     {$region 'IStoreable'}
     function GetLoadFilesFilter: String; override;
@@ -49,25 +56,51 @@ type
 
   end;
 
+  {$ENDREGION ...................................................................}
+
+  {$REGION 'TBitmapImageStoryItemFactory' ---------------------------------------}
+
+  TBitmapImageStoryItemFactory = class(TInterfacedObject, IStoryItemFactory)
+    function New(const AOwner: TComponent = nil): IStoryItem;
+  end;
+
+  {$ENDREGION ...................................................................}
+
+  procedure Register;
+
 implementation
-  uses READCOM.Views.Options.BitmapImageStoryItemOptions;
+  uses
+    READCOM.Views.StoryItemFactory, //for StoryItemFactories, StoryItemAddFileFilter
+    READCOM.Views.Options.BitmapImageStoryItemOptions; //for TBitmapImageStoryItemOptions
 
 {$R *.fmx}
+
+{$REGION 'TBitmapImageStoryItem'}
 
 constructor TBitmapImageStoryItem.Create(AOwner: TComponent);
 begin
   inherited;
-  ImageControl.SetSubComponent(true);
-  ImageControl.Stored := false; //don't store state, should use state from designed .FMX resource
+
+  with ImageControl do
+  begin
+    Stored := false; //don't store state, should use state from designed .FMX resource
+    SetSubComponent(true);
+    SendToBack;
+    HitTest := false;
+  end;
 end;
 
-{ TBitmapImageStoryItem }
+procedure TBitmapImageStoryItem.Loaded;
+begin
+  inherited;
+  Glyph.Visible := not Assigned(ImageControl.Bitmap.Image); //hide default Glyph if we have a bitmap image
+end;
 
 {$region 'IStorable'}
 
 function TBitmapImageStoryItem.GetLoadFilesFilter: String;
 begin
-  result := FILTER_PNG_JPEG_JPG;
+  result := FILTER_BITMAP_IMAGE;
 end;
 
 procedure TBitmapImageStoryItem.Load(const Stream: TStream; const ContentFormat: String = EXT_READCOM);
@@ -118,6 +151,27 @@ end;
 
 {$endregion}
 
+{$region 'EditMode'}
+
+procedure TBitmapImageStoryItem.SetEditMode(const Value: Boolean);
+begin
+  inherited;
+  ImageControl.SendToBack; //make the bitmap image show under the DropTarget
+end;
+
+{$endregion}
+
+{$ENDREGION}
+
+{$ENDREGION}
+
+{$REGION 'TBitmapImageStoryItemFactory'}
+
+function TBitmapImageStoryItemFactory.New(const AOwner: TComponent = nil): IStoryItem;
+begin
+  result := TBitmapImageStoryItem.Create(AOwner);
+end;
+
 {$ENDREGION}
 
 procedure RegisterClasses;
@@ -133,6 +187,9 @@ begin
 end;
 
 initialization
+  StoryItemFactories.Add([EXT_PNG, EXT_JPG, EXT_JPEG], TBitmapImageStoryItemFactory.Create);
+  AddStoryItemFileFilter(FILTER_BITMAP_IMAGE_TITLE, FILTER_BITMAP_IMAGE_EXTS);
+
   RegisterClasses; //don't call Register here, it's called by the IDE automatically on a package installation (fails at runtime)
 
 end.

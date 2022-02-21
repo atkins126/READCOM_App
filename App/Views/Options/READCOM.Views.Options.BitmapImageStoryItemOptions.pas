@@ -15,14 +15,21 @@ uses
 
 type
   TBitmapImageStoryItemOptions = class(TStoryItemOptions, IBitmapImageStoryItemOptions, IStoryItemOptions)
-    procedure actionCameraExecute(Sender: TObject);
+    TakePhotoFromCameraAction: TTakePhotoFromCameraAction;
+    btnCamera: TSpeedButton;
+    //procedure actionCameraExecute(Sender: TObject);
+    procedure TakePhotoFromCameraActionDidFinishTaking(Image: TBitmap);
+
   protected
-    procedure DoDidFinish(Image: TBitmap);
-    procedure DoMessageListener(const Sender: TObject; const M: TMessage); //for Android in case app restarted: see https://docwiki.embarcadero.com/Libraries/Sydney/en/FMX.MediaLibrary.TMessageDidFinishTakingImageFromLibrary
+    //procedure DoCameraDidFinish(Image: TBitmap);
+    //procedure DoMessageDidFinishTakingImageFromLibrary(const Sender: TObject; const M: TMessage); //for Android in case app restarted: see https://docwiki.embarcadero.com/Libraries/Sydney/en/FMX.MediaLibrary.TMessageDidFinishTakingImageFromLibrary
 
     {BitmapImageStoryItem}
     function GetBitmapImageStoryItem: IBitmapImageStoryItem;
     procedure SetBitmapImageStoryItem(const Value: IBitmapImageStoryItem);
+
+  public
+    constructor Create(AOwner: TComponent); override;
 
   published
     property BitmapImageStoryItem: IBitmapImageStoryItem read GetBitmapImageStoryItem write SetBitmapImageStoryItem stored false;
@@ -34,6 +41,12 @@ uses
   FMX.Platform;
 
 {$R *.fmx}
+
+constructor TBitmapImageStoryItemOptions.Create(AOwner: TComponent);
+begin
+  inherited;
+  //TMessageManager.DefaultManager.SubscribeToMessage(TMessageDidFinishTakingImageFromLibrary, DoMessageDidFinishTakingImageFromLibrary); //see region 'TakePhotoViaCameraService'
+end;
 
 {$region 'BitmapImageStoryItem'}
 
@@ -49,18 +62,27 @@ end;
 
 {$endregion}
 
-procedure TBitmapImageStoryItemOptions.DoDidFinish(Image: TBitmap);
+procedure TBitmapImageStoryItemOptions.TakePhotoFromCameraActionDidFinishTaking(Image: TBitmap);
+begin
+  inherited;
+  BitmapImageStoryItem.Image.Bitmap.Assign(Image);
+end;
+
+{$region 'TakePhotoViaCameraService'}
+//using predefined Camera action instead of FMX platform services (need to implement for Windows) - there's also TCameraComponent
+(*
+procedure TBitmapImageStoryItemOptions.DoCameraDidFinish(Image: TBitmap);
 begin
   BitmapImageStoryItem.Image.Bitmap.Assign(Image);
 end;
 
-procedure TBitmapImageStoryItemOptions.DoMessageListener(const Sender: TObject; const M: TMessage);
+procedure TBitmapImageStoryItemOptions.DoMessageDidFinishTakingImageFromLibrary(const Sender: TObject; const M: TMessage);
 begin
   if M is TMessageDidFinishTakingImageFromLibrary then
     BitmapImageStoryItem.Image.Bitmap.Assign(TMessageDidFinishTakingImageFromLibrary(M).Value);
 end;
 
-procedure TBitmapImageStoryItemOptions.actionCameraExecute(Sender: TObject); //TODO: use TCameraComponent instead or predefined Camera action (think that wasn't implemented for Windows)?
+procedure TBitmapImageStoryItemOptions.actionCameraExecute(Sender: TObject);
 begin
   inherited;
 
@@ -80,5 +102,7 @@ begin
   else
     ShowMessage('This device does not support the camera service');
 end;
+*)
+{$endregion}
 
 end.

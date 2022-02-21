@@ -1,3 +1,6 @@
+//Description: Zooming Models
+//Author: George Birbilis (http://zoomicon.com)
+
 unit Zoomicon.Zooming.Models;
 
 interface
@@ -19,6 +22,7 @@ type
     procedure ZoomTo(const Control: TControl = nil; const KeepRatio: Boolean = true); //ZoomTo(nil) zooms to all content
     //
     property Zoom: TPointF read GetZoom write SetZoom;
+    //property OnZoomChanged: TZoomChangedEvent; //should be able to define an event at an interface and let the mapping (say to a field) details to the implementing class
   end;
 
 implementation

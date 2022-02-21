@@ -3,20 +3,21 @@ unit READCOM.App.Globals;
 interface
 
 uses
-  System.SysUtils, System.Classes, FMX.Types, FMX.Controls;
+  System.SysUtils, System.Classes, FMX.Types, FMX.Controls,
+  System.ImageList, FMX.ImgList, FMX.SVGIconImageList;
+
+const
+  URL_HELP = 'https://github.com/Zoomicon/READCOM_App/wiki';
 
 type
-  TDataModule1 = class(TDataModule)
+  TGlobals = class(TDataModule)
     DefaultStyleBook: TStyleBook;
     Lang: TLang;
-  private
-    { Private declarations }
-  public
-    { Public declarations }
+    SVGIconImageList: TSVGIconImageList;
   end;
 
 var
-  DataModule1: TDataModule1;
+  Globals: TGlobals;
 
 implementation
 

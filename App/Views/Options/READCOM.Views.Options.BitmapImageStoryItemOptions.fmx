@@ -1,16 +1,43 @@
 inherited BitmapImageStoryItemOptions: TBitmapImageStoryItemOptions
-  inherited ActionList: TActionList
-    inherited actionDelete: TAction
-      ImageIndex = 3
+  Size.Width = 492.000000000000000000
+  inherited panelUrlAction: TPanel
+    Size.Width = 492.000000000000000000
+    inherited editUrlAction: TEdit
+      Size.Width = 449.000000000000000000
     end
-    inherited actionOpen: TAction
-      ImageIndex = 1
+  end
+  inherited layoutButtons: TFlowLayout
+    Size.Width = 492.000000000000000000
+    object btnCamera: TSpeedButton
+      Action = TakePhotoFromCameraAction
+      Align = Client
+      Enabled = True
+      Images = Globals.SVGIconImageList
+      ImageIndex = 11
+      Size.Width = 64.000000000000000000
+      Size.Height = 57.000000000000000000
+      Size.PlatformDefault = False
+      StyleLookup = 'actiontoolbutton'
+    end
+  end
+  inherited ActionList: TActionList
+    inherited actionLoad: TAction
+      ImageIndex = 6
     end
     inherited actionSave: TAction
-      ImageIndex = 2
+      ImageIndex = 7
     end
-    inherited actionAnchor: TAction
-      ImageIndex = 0
+    inherited actionChangeUrlAction: TAction
+      ImageIndex = 9
+    end
+    inherited actionAdd: TAction
+      ImageIndex = 10
+    end
+    object TakePhotoFromCameraAction: TTakePhotoFromCameraAction
+      Category = 'Media Library'
+      ImageIndex = 11
+      OnDidFinishTaking = TakePhotoFromCameraActionDidFinishTaking
+      ImageIndex = 11
     end
   end
 end

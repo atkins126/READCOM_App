@@ -18,33 +18,55 @@ uses
 
 const
   EXT_TXT = '.txt';
-  FILTER_TXT = 'Text files (*.txt)|*.txt';
+  FILTER_TEXT_TITLE = 'Text (*.txt)';
+  FILTER_TEXT_EXTS = '*' + EXT_TXT;
+  FILTER_TEXT = FILTER_TEXT_TITLE + '|' + FILTER_TEXT_EXTS;
+
+resourcestring
+  DEFAULT_TEXT = '......' + sLineBreak + '......';
 
 type
+
+  {$REGION 'TTextStoryItem' ----------------------------------------------------------}
+
   TTextStoryItem = class(TStoryItem, ITextStoryItem, IStoryItem, IStoreable)
     Memo: TMemo;
     procedure MemoApplyStyleLookup(Sender: TObject);
+    procedure MemoResize(Sender: TObject);
 
   //--- Methods ---
 
   protected
-    { Text }
+    FEditable: Boolean;
+
+    procedure UpdateMemoReadOnly;
+
+    {DefaultSize}
+    function GetDefaultSize: TSizeF; override;
+
+    {Active}
+    procedure SetActive(const Value: Boolean); override;
+
+    {EditMode}
+    procedure SetEditMode(const Value: Boolean); override;
+
+    {Text}
     function GetText: String;
     procedure SetText(const Value: String);
 
-    { Editable }
+    {Editable}
     function IsEditable: Boolean;
     procedure SetEditable(const Value: Boolean);
 
-    { InputPrompt }
+    {InputPrompt}
     function GetInputPrompt: String;
     procedure SetInputPrompt(const Value: String);
 
-    { Font }
+    {Font}
     function GetFont: TFont;
     procedure SetFont(const Value: TFont);
 
-    { Color }
+    {Color}
     function GetTextColor: TAlphaColor;
     procedure SetTextColor(const Value: TAlphaColor);
 
@@ -60,12 +82,22 @@ type
   //--- Properties ---
 
   published
-    property Text: String read GetText write SetText; //default ''
+    property Text: String read GetText write SetText;
     property Editable: Boolean read IsEditable write SetEditable; //default false
     property InputPrompt: String read GetInputPrompt write SetInputPrompt;
     property Font: TFont read GetFont write SetFont; //sets font size, font family (typeface), font style (bold, italic, underline, strikeout)
     property TextColor: TAlphaColor read GetTextColor write SetTextColor;
   end;
+
+  {$ENDREGION ........................................................................}
+
+  {$REGION 'TTextStoryItemFactory' ---------------------------------------------------}
+
+  TTextStoryItemFactory = class(TInterfacedObject, IStoryItemFactory)
+    function New(const AOwner: TComponent = nil): IStoryItem;
+  end;
+
+  {$ENDREGION ........................................................................}
 
   procedure Register;
 
@@ -73,20 +105,60 @@ implementation
   uses
     IOUtils, //for TFile
     FMX.Styles.Objects, //for TActiveStyleObject
-    Zoomicon.Text; //for ReadAllText
+    Zoomicon.Text, //for ReadAllText
+    READCOM.Views.StoryItemFactory; //for StoryItemFactories, AddStoryItemFileFilter
 
 {$R *.fmx}
 
-{ TTextStoryItem }
+{$REGION 'TTextStoryItem'}
 
 constructor TTextStoryItem.Create(AOnwer: TComponent);
 begin
   inherited;
-  memo.SetSubComponent(true);
-  memo.Stored := false; //don't store state, should use state from designed .FMX resource
+
+  with Memo do
+  begin
+    Stored := false; //don't store state, should use state from designed .FMX resource
+    SetSubComponent(true);
+    ReadOnly := true; //since we have Editable property defaulting to false
+    Text := DEFAULT_TEXT;
+  end;
 end;
 
 {$REGION '--- PROPERTIES ---'}
+
+{$region 'DefaultSize'}
+
+function TTextStoryItem.GetDefaultSize: TSizeF;
+begin
+  Result := TSizeF.Create(50, 30);
+end;
+
+{$endregion}
+
+{$region 'Active'}
+
+procedure TTextStoryItem.SetActive(const Value: Boolean);
+begin
+  inherited;
+
+  if Value then
+    Memo.SetFocus
+  else
+    Memo.ResetFocus;
+end;
+
+{$endregion}
+
+{$region 'EditMode'}
+
+procedure TTextStoryItem.SetEditMode(const Value: Boolean);
+begin
+  inherited;
+  UpdateMemoReadOnly;
+end;
+
+{$endregion}
 
 {$region 'Text'}
 
@@ -106,12 +178,13 @@ end;
 
 function TTextStoryItem.IsEditable: Boolean;
 begin
-  result := not Memo.ReadOnly;
+  result := FEditable;
 end;
 
 procedure TTextStoryItem.SetEditable(const Value: Boolean);
 begin
-  Memo.ReadOnly := not Value;
+  FEditable := Value;
+  UpdateMemoReadOnly;
 end;
 
 {$endregion}
@@ -158,13 +231,22 @@ end;
 
 {$endregion}
 
+{$region 'Helpers'}
+
+procedure TTextStoryItem.UpdateMemoReadOnly;
+begin
+  Memo.ReadOnly := not (IsEditable or IsEditMode);
+end;
+
+{$endregion}
+
 {$ENDREGION}
 
 {$region 'IStoreable'}
 
 function TTextStoryItem.GetLoadFilesFilter: String;
 begin
-  result := FILTER_TXT;
+  result := FILTER_TEXT;
 end;
 
 procedure TTextStoryItem.Load(const Stream: TStream; const ContentFormat: String = EXT_READCOM);
@@ -179,8 +261,11 @@ procedure TTextStoryItem.LoadTXT(const Stream: TStream);
 begin
   //Text := ReadAllText(Stream);
   var s := TStringList.Create(#0, #13);
+
   s.LoadFromStream(Stream);
   Text := s.DelimitedText;
+  Size.Size := TSizeF.Create(50, 30); //TODO: judge on text volume
+
   FreeAndNil(s);
 end;
 
@@ -193,7 +278,24 @@ begin
      TActiveStyleObject(Obj).Source := Nil;
 end;
 
+procedure TTextStoryItem.MemoResize(Sender: TObject);
+begin
+  inherited;
+  Size := Memo.Size;
+end;
+
 {$endregion}
+
+{$ENDREGION}
+
+{$REGION 'TTextStoryItemFactory'}
+
+function TTextStoryItemFactory.New(const AOwner: TComponent = nil): IStoryItem;
+begin
+  result := TTextStoryItem.Create(AOwner);
+end;
+
+{$ENDREGION}
 
 procedure RegisterClasses;
 begin
@@ -208,6 +310,9 @@ begin
 end;
 
 initialization
+  StoryItemFactories.Add([EXT_TXT], TTextStoryItemFactory.Create);
+  AddStoryItemFileFilter(FILTER_TEXT_TITLE, FILTER_TEXT_EXTS);
+
   RegisterClasses; //don't call Register here, it's called by the IDE automatically on a package installation (fails at runtime)
 
 end.

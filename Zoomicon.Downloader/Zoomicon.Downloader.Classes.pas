@@ -26,11 +26,10 @@ interface
         function WaitForTermination(Timeout: cardinal = INFINITE): TWaitResult;
         procedure SetTerminationEvent;
 
-      published
-       property Downloader: TDownloader read FDownloader write FDownloader;
+        property Downloader: TDownloader read FDownloader write FDownloader;
     end;
 
-    TDownloader = class(TInterfacedObject, IDownloader)
+    TDownloader = class(TComponent, IDownloader)
       protected
         FContentCache: IContentCache;
         FDownloaderThread: TDownloaderThread;
@@ -59,7 +58,7 @@ interface
         function Execute: integer; virtual; //returns HTTP status code //called by TDownloaderThread
 
       public
-        constructor Create(const TheContentURI: TURI; const TheData: TStream; const TheContentCache: IContentCache = nil; const AutoStart: Boolean = false; const TheStartPosition: Int64 = 0; const TheEndPosition: Int64 = 0);
+        constructor Create(AOwner: TComponent; const TheContentURI: TURI; const TheData: TStream; const TheContentCache: IContentCache = nil; const AutoStart: Boolean = false; const TheStartPosition: Int64 = 0; const TheEndPosition: Int64 = 0); reintroduce;
         procedure Initialize(const TheContentURI: TURI; const TheData: TStream; const TheContentCache: IContentCache = nil; const AutoStart: Boolean = false; const TheStartPosition: Int64 = 0; const TheEndPosition: Int64 = 0);
 
         procedure Start; virtual;
@@ -112,6 +111,7 @@ uses
   //Winapi.Windows, //for OutputDebugStr
   {$endif}
   System.IOUtils, //for TPath, TDirectory
+  System.NetConsts, //to expand inline THTTPClient.SetAccept
   System.Net.HttpClient, //for THTTPClient
   System.SysUtils; //for fmOpenWrite, fmShareDenyNone
 
@@ -169,8 +169,9 @@ end;
 
 {$REGION 'TDownloader'}
 
-constructor TDownloader.Create(const TheContentURI: TURI; const TheData: TStream; const TheContentCache: IContentCache = nil; const AutoStart: Boolean = false; const TheStartPosition: Int64 = 0; const TheEndPosition: Int64 = 0);
+constructor TDownloader.Create(AOwner: TComponent; const TheContentURI: TURI; const TheData: TStream; const TheContentCache: IContentCache = nil; const AutoStart: Boolean = false; const TheStartPosition: Int64 = 0; const TheEndPosition: Int64 = 0);
 begin
+  inherited Create(AOwner);
   Initialize(TheContentURI, TheData, TheContentCache, AutoStart, TheStartPosition, TheEndPosition);
 end;
 
@@ -296,7 +297,7 @@ begin
   end;
 end;
 
-{   See: https://docwiki.embarcadero.com/Libraries/Sydney/en/System.Net.HttpClient.THTTPClient.OnReceiveData
+{ See: https://docwiki.embarcadero.com/Libraries/Sydney/en/System.Net.HttpClient.THTTPClient.OnReceiveData
     Occurs one or more times while your HTTP client receives response data for one or more requests,
     and it indicates the current progress of the response download for the specified request.
     The event handler of OnReceiveData receives the following parameters:

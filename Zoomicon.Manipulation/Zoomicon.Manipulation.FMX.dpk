@@ -25,11 +25,13 @@ package Zoomicon.Manipulation.FMX;
 {$IMAGEBASE $400000}
 {$DEFINE DEBUG}
 {$ENDIF IMPLICITBUILDING}
+
 {$IMPLICITBUILD ON}
 
 requires
   rtl,
   fmx,
+  Zoomicon.Helpers.FMX,
   Zoomicon.Generics;
 
 contains

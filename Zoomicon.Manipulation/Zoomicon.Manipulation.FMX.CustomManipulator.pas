@@ -4,9 +4,10 @@ interface
 
 uses
   Zoomicon.Manipulation.FMX.Selector, //for TLocationSelector, TAreaSelector
+  System.Classes, //for TShiftState
+  System.Math, //for Min, EnsureInRange (inlined)
   System.Types,
   System.UITypes,
-  System.Classes,
   FMX.Types,
   FMX.Controls,
   FMX.Forms,
@@ -21,19 +22,6 @@ const
   DEFAULT_PROPORTIONAL = false;
 
 type
-
-  {$REGION 'TControlObjectAtHelper' -----------------------------------------------------}
-
-  TControlObjectAtHelper = class helper for TControl //TODO: move to other unit
-    protected
-      function ObjectAtPoint(const AScreenPoint: TPointF; RecursionDepth: Integer = 0): IControl; overload;
-
-    public
-      function ObjectAtPoint(const AScreenPoint: TPointF; Recursive: Boolean): IControl; overload; inline;
-      function ObjectAtLocalPoint(const ALocalPoint: TPointF; Recursive: Boolean = true): IControl; inline;
-  end;
-
-  {$ENDREGION}
 
   {$REGION 'TCustomManipulator' -----------------------------------------------------}
 
@@ -50,12 +38,17 @@ type
     FAutoSize: Boolean;
     FDragStartLocation: TPointF;
 
+    procedure Loaded; override;
     procedure ApplyEditModeToChild(Control: TControl);
     procedure DoAddObject(const AObject: TFmxObject); override;
     procedure DoAutoSize;
 
     {AutoSize}
     procedure SetAutoSize(const Value: Boolean);
+
+    {DropTargetVisible}
+    function IsDropTargetVisible: Boolean; virtual;
+    procedure SetDropTargetVisible(const Value: Boolean); virtual;
 
     {EditMode}
     function IsEditMode: Boolean; virtual;
@@ -93,26 +86,27 @@ type
 
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
 
     {$region 'Manipulation'}
     {Z-order}
     procedure BringToFrontElseSendToBack(const Control: TControl); overload; inline;
 
     {Move}
-    procedure MoveControl(const Control: TControl; const DX, DY: Single); overload; inline;
+    procedure MoveControl(const Control: TControl; const DX, DY: Single; const SkipAutoSize: Boolean = false); overload; inline;
     procedure MoveControls(const Controls: TControlList; const DX, DY: Single); overload;
     procedure MoveControls(const DX, DY: Single); overload;
     procedure MoveSelected(const DX, DY: Single);
 
     {Resize}
-    procedure ResizeControl(const Control: TControl; const DW, DH: Single); overload; inline;
+    procedure ResizeControl(const Control: TControl; const DW, DH: Single; const SkipAutoSize: Boolean = false); overload; inline;
     procedure ResizeControls(const Controls: TControlList; const DW, DH: Single); overload;
     procedure ResizeControls(const DW, DH: Single); overload;
     procedure ResizeSelected(const DW, DH: Single);
 
     {Rotate}
     procedure SetControlAngle(const Control: TControl; const Angle: Single); overload; inline;
-    procedure RotateControl(const Control: TControl; const DAngle: Single); overload; inline;
+    procedure RotateControl(const Control: TControl; const DAngle: Single; const SkipAutoSize: Boolean = false); overload; inline;
     procedure RotateControls(const Controls: TControlList; const DAngle: Single); overload;
     procedure RotateControls(const DAngle: Single); overload;
     procedure RotateSelected(const DAngle: Single);
@@ -121,6 +115,7 @@ type
     property AreaSelector: TAreaSelector read FAreaSelector stored false;
     property DropTarget: TDropTarget read FDropTarget stored false;
     property AutoSize: Boolean read FAutoSize write SetAutoSize default DEFAULT_AUTOSIZE;
+    property DropTargetVisible: Boolean read IsDropTargetVisible write SetDropTargetVisible stored false default DEFAULT_EDITMODE;
     property EditMode: Boolean read IsEditMode write SetEditMode default DEFAULT_EDITMODE;
     property Proportional: Boolean read IsProportional write SetProportional default DEFAULT_PROPORTIONAL;
   end;
@@ -132,9 +127,9 @@ procedure Register;
 implementation
 
 uses
+  Zoomicon.Helpers.FMX.Controls.ControlHelpers, //for TControlObjectAtHelper, TControlConvertLocalRectHelper, TControlSubComponentHelper
   Zoomicon.Generics.Functors, //for TF
   Zoomicon.Generics.Collections, //for TListEx
-  System.Math, //for Min, EnsureInRange
   System.SysUtils; //for Supports
 
 {$R *.fmx}
@@ -164,53 +159,26 @@ begin
 end;
 }
 
-function TControlObjectAtHelper.ObjectAtPoint(const AScreenPoint: TPointF; RecursionDepth: Integer = 0): IControl; //based on TControl.ObjectAtPoint
-begin
-  if not ShouldTestMouseHits then
-    Exit(nil);
-
-  var LP := AScreenPoint;
-  if FScene <> nil then
-    LP := FScene.ScreenToLocal(LP);
-  if (ClipChildren or SmallSizeControl) and not PointInObject(LP.X, LP.Y) then
-    Exit(nil);
-
-  if (RecursionDepth > 0) and (ControlsCount > 0) then
-    for var I := GetLastVisibleObjectIndex - 1 downto GetFirstVisibleObjectIndex do
-    begin
-      var Control := Controls[I];
-      if not Control.GetVisible then
-        Continue;
-
-      var NewObj := Control.ObjectAtPoint(AScreenPoint, RecursionDepth - 1);
-      if Assigned(NewObj) then
-        Exit(NewObj);
-      end;
-
-  Result := nil;
-
-  if PointInObject(LP.X, LP.Y) {and CheckHitTest(HitTest)} then //TODO: allow to have option to ignore hit test
-    Result := Self;
-end;
-
-function TControlObjectAtHelper.ObjectAtPoint(const AScreenPoint: TPointF; Recursive: Boolean): IControl;
-begin
-  if Recursive then
-    result := ObjectAtPoint(AScreenPoint)
-  else
-    result := ObjectAtPoint(AScreenPoint, 1);
-end;
-
-function TControlObjectAtHelper.ObjectAtLocalPoint(const ALocalPoint: TPointF; Recursive: Boolean = true): IControl;
-begin
-  result := ObjectAtPoint(LocalToScreen(ALocalPoint), Recursive);
-end;
-
 {$endregion}
 
 {$REGION 'TCustomManipulator'}
 
 constructor TCustomManipulator.Create(AOwner: TComponent);
+begin
+  inherited; //this will also load designer resource, which will call Loaded and create subcomponents
+
+  AutoSize := DEFAULT_AUTOSIZE; //must do after CreateAreaSelector
+  EditMode := DEFAULT_EDITMODE;
+  Proportional := DEFAULT_PROPORTIONAL;
+end;
+
+destructor TCustomManipulator.Destroy;
+begin
+  ReleaseCapture; //make sure we always release Mouse Capture
+  inherited;
+end;
+
+procedure TCustomManipulator.Loaded;
 
   procedure CreateAreaSelector;
   begin
@@ -223,7 +191,7 @@ constructor TCustomManipulator.Create(AOwner: TComponent);
        Size.Size := TPointF.Zero;
        Visible := false;
        GripSize := SELECTION_GRIP_SIZE;
-       BringToFront;
+       BringToFront; //not really doing something since we've set Visible to false
        OnlyFromTop := true; //TODO: add some keyboard modifier to area selector's MouseDown override or something for SHIFT key to override this temporarily (FOnlyFromTopOverride internal flag)
        OnTrack := HandleAreaSelectorTrack;
        end;
@@ -253,9 +221,13 @@ constructor TCustomManipulator.Create(AOwner: TComponent);
     begin
       Stored := False; //don't store state
       SetSubComponent(true); //don't show in Designer for descendents
-      HitTest := False;
-      SendToBack;
-      //DropTarget.Align := TAlignLayout.Client; //TODO: report to Embarcadero that it fails either before or after setting Parent (have to do at ancestor's constructor)
+      HitTest := False; //TODO: check if needed for drag-drop
+      Visible := EditMode;
+      Opacity := 0.4;
+      SendToBack; //always do after setting Visible
+      DropTarget.Align := TAlignLayout.Client;
+
+      Enabled := true;
       OnDragOver := DropTargetDragOver;
       OnDropped := DropTargetDropped;
     end;
@@ -263,15 +235,10 @@ constructor TCustomManipulator.Create(AOwner: TComponent);
   end;
 
 begin
+  inherited;
   CreateAreaSelector;
   CreateLocationSelector; //must do after CreateAreaSelector
-  CreateDropTarget;
-
-  AutoSize := DEFAULT_AUTOSIZE; //must do after CreateAreaSelector
-  EditMode := DEFAULT_EDITMODE;
-  Proportional := DEFAULT_PROPORTIONAL;
-
-  inherited; //do last since it will also load designer resource
+  CreateDropTarget; //must do after CreateAreaSelector (to send below that)
 end;
 
 {$region 'Manipulation'}
@@ -291,8 +258,10 @@ end;
 
 {$region 'Move'}
 
-procedure TCustomManipulator.MoveControl(const Control: TControl; const DX, DY: Single);
+procedure TCustomManipulator.MoveControl(const Control: TControl; const DX, DY: Single; const SkipAutoSize: Boolean = false);
 begin
+  if Control.SubComponent then exit; //ignore any subcomponents like the DropTarget (or others added by descendents)
+
   BeginUpdate;
 
   with Control.Position do
@@ -300,13 +269,14 @@ begin
     var NewX := X + DX;
     var NewY := Y + DY;
 
-    if AutoSize then
+    if AutoSize or (not ClipChildren) or (InRange(NewX, 0, Width - 1) and InRange(NewY, 0, Height - 1)) then //allowing controls to move out of bounds if we're set to not clip them or if they're partially clipped (don't want them to totally disappear)
       Point := PointF(NewX, NewY)
     else
       Point := PointF( EnsureRange(NewX, 0, Width - Control.Width), EnsureRange(NewY, 0, Height - Control.Height) );
   end;
 
-  DoAutoSize;
+  if not SkipAutoSize then
+    DoAutoSize;
   EndUpdate;
 end;
 
@@ -319,7 +289,7 @@ begin
     TListEx<TControl>.ForEach(Controls,
       procedure (Control: TControl)
       begin
-        MoveControl(Control, DX, DY);
+        MoveControl(Control, DX, DY, true); //skip autosizing separately for each control
       end
     );
 
@@ -347,8 +317,10 @@ end;
 
 {$region 'Resize'}
 
-procedure TCustomManipulator.ResizeControl(const Control: TControl; const DW, DH: Single);
+procedure TCustomManipulator.ResizeControl(const Control: TControl; const DW, DH: Single; const SkipAutoSize: Boolean = false);
 begin
+  if Control.SubComponent then exit; //ignore any subcomponents like the DropTarget (or others added by descendents)
+
   BeginUpdate;
 
   with Control.Size do
@@ -364,7 +336,8 @@ begin
 
   Control.Position.Point := Control.Position.Point - PointF(DW/2, DH/2); //resize from center
 
-  DoAutoSize;
+  if not SkipAutoSize then
+    DoAutoSize;
   EndUpdate;
 end;
 
@@ -377,7 +350,7 @@ begin
     TListEx<TControl>.ForEach(Controls,
       procedure (Control: TControl)
       begin
-        ResizeControl(Control, DW, DH);
+        ResizeControl(Control, DW, DH, true); //skip autosizing separately for each control
       end
     );
 
@@ -411,14 +384,17 @@ begin
     RotationAngle := Angle; //seems RotationAngle is protected, but since TControl implements IRotatedControl we can access that property through that interface
 end;
 
-procedure TCustomManipulator.RotateControl(const Control: TControl; const DAngle: Single);
+procedure TCustomManipulator.RotateControl(const Control: TControl; const DAngle: Single; const SkipAutoSize: Boolean = false);
 begin
+  if Control.SubComponent then exit; //ignore any subcomponents like the DropTarget (or others added by descendents)
+
   BeginUpdate;
 
   with (Control as IRotatedControl) do
     RotationAngle := RotationAngle + DAngle; //seems RotationAngle is protected, but since TControl implements IRotatedControl we can access that property through that interface
 
-  DoAutoSize;
+  if not SkipAutoSize then
+    DoAutoSize;
   EndUpdate;
 end;
 
@@ -432,7 +408,7 @@ begin
       procedure (Control: TControl)
       begin
         try
-          RotateControl(Control, DAngle);
+          RotateControl(Control, DAngle); //skip autosizing separately for each control
         except //catch exceptions, in case any controls fail when you try to rotate them
           //NOP //TODO: do some error logging
         end;
@@ -466,7 +442,8 @@ end;
 procedure TCustomManipulator.DoAddObject(const AObject: TFmxObject);
 begin
   inherited;
-  AreaSelector.BringToFront;
+  if Assigned(AreaSelector) then
+    AreaSelector.BringToFront;
   if (AObject is TControl) then
     ApplyEditModeToChild(TControl(AObject));
 end;
@@ -478,7 +455,7 @@ end;
 procedure TCustomManipulator.SetAutoSize(const Value: Boolean);
 begin
   FAutoSize := Value;
-  DoAutoSize;
+  DoAutoSize; //will act only if FAutoSize
 end;
 
 function IsSelection(obj: TFmxObject): Boolean;
@@ -487,26 +464,54 @@ begin
 end;
 
 procedure TCustomManipulator.DoAutoSize;
+
+  procedure SetControlsAlign(const List: TControlList; const TheAlignment: TAlignLayout);
+  begin
+    for var Control in List do
+      if not ((Control is TDropTarget) or (Control is TRectangle) or (Control is TAreaSelector)) then //TODO: should have some info on which to excempt? or just do this for ones that have TAlignLayout.Scale? Or use some function that sets size without affecting children
+        Control.Align := TheAlignment;
+  end;
+
 begin
+(* //TODO: FAILS TRYING TO SET HUGE SIZE TO BOUNDSRECT
   if (FAutoSize) then
-    begin
+  begin
     BeginUpdate;
 
-    //temporarily disable Align:=Scale setting of all Selections and set it back again when done
-    //var theSelections := Selections;
-    try
-      //SetControlsAlign(TAlignLayout.None);
+    //temporarily disable Align:=Scale setting of children and set it back again when done
+    SetControlsAlign(Controls, TAlignLayout.None);
 
-      var rect := GetChildrenRect;
-      SetSize(rect.Width, rect.Height);
+    var rect := GetChildrenRect;
+    if Assigned(Parent) then
+      rect := ConvertLocalRectTo(Parent as TControl, rect); //TODO: is there a chance the Parent is nil?
 
-      //SetControlsAlign(TAlignLayout.Scale);
-    finally
-      //FreeAndNil(theSelections);
-    end;
+    with BoundsRect do
+      if (rect.Left < Left) or (rect.Top < Top) or (rect.Right > Right) or (rect.Bottom > Bottom) then //only AutoSize to expand, never shrink down (else would disappear when there were no children)
+        BoundsRect := rect; //TODO: seems to fail (probably should invoke later, not in the Track event of the PositionSelector)
+
+    SetControlsAlign(Controls, TAlignLayout.Scale);
 
     EndUpdate;
-    end;
+  end;
+*)
+end;
+
+{$endregion}
+
+{$region 'DropTargetVisible'}
+
+function TCustomManipulator.IsDropTargetVisible: Boolean;
+begin
+  result := DropTarget.Visible;
+end;
+
+procedure TCustomManipulator.SetDropTargetVisible(const Value: Boolean);
+begin
+  with DropTarget do
+  begin
+    Visible := Value;
+    SendToBack; //always do when Visible changed
+  end;
 end;
 
 {$endregion}
@@ -515,15 +520,15 @@ end;
 
 function TCustomManipulator.IsEditMode: Boolean;
 begin
-  result := AreaSelector.Visible;
+  result := Assigned(AreaSelector) and AreaSelector.Visible;
 end;
 
 procedure TCustomManipulator.ApplyEditModeToChild(Control: TControl);
 begin
-  if not (Control is TAreaSelector) then //no need to use a Predicate<TControl> to select the non-TSelectors, since we can excluse the TSelectorArea here
+  if not Control.SubComponent then
     begin
     var NotEditing := not EditMode;
-    Control.Enabled := NotEditing; //don't use, will show controls as semi-transparent
+    Control.Enabled := NotEditing; //note this will show controls as semi-transparent
     //Control.HitTest := NotEditing; //TODO: seems "HitTest=false" eats up Double-Clicks, they don't propagate to parent control, need to fix
     //Control.SetDesign(EditMode, false);
     end;
@@ -532,10 +537,13 @@ end;
 procedure TCustomManipulator.SetEditMode(const Value: Boolean);
 begin
   if Assigned(FAreaSelector) then
+    with FAreaSelector do
     begin
-    FAreaSelector.Visible := Value; //Show or Hide selection UI (this will also hide the move control point) //MUST DO FIRST (AreaSelector.Visible used to detect edit mode)
-    FAreaSelector.BringToFront; //always on top
+      Visible := Value; //Show or Hide selection UI (this will also hide the move control point) //MUST DO FIRST (AreaSelector.Visible used to detect edit mode)
+      BringToFront; //always on top (need to do after setting Visible)
     end;
+
+  DropTargetVisible := Value;
 
   TListEx<TControl>.ForEach( //TODO: should also do this action when adding new controls (so move the inner proc payload to separate method and call both here and after adding new control [have some InitControl that calls such sub-procs])
     Controls,
@@ -581,12 +589,13 @@ begin
   var SelectionPoint := TSelectionPoint(Sender); //assuming events are sent by TSelectionPoint
   with SelectionPoint do
     begin
-    var ParentPos := ParentControl.Position.Point;
-    var newX := ParentPos.X;
-    var newY := ParentPos.Y;
+    //var ParentPos := ParentControl.Position.Point;
+    //var newX := ParentPos.X;
+    //var newY := ParentPos.Y;
 
-    //Offset all controls (including this one) by the amount this control got into negative coordinates:
-    MoveControls(TF.Iff<Single>(newX < 0, newX, 0), TF.Iff<Single>(newY < 0, newY, 0)); //this will also call DoAutoSize //there's also IfThen from System.Math, but those aren't marked as "Inline"
+    //if AutoSize and (AreaSelector.SelectedCount > 0) then //Offset all controls (including this one) by the amount the selector got into negative coordinates (ONLY DOING IT FOR NEGATIVE COORDINATES)
+      //MoveControls(TF.Iff<Single>(newX < 0, -newX, 0), TF.Iff<Single>(newY < 0, -newY, 0)); //this will also call DoAutoSize //there's also IfThen from System.Math, but those aren't marked as "Inline"
+      //TODO: fix this: should only do for controls that moved into negative coordinates, not if the selector moved into such
 
     //PressedPosition := TPointF.Zero;
     Position.Point := TPointF.Zero;
@@ -627,7 +636,7 @@ end;
 
 procedure TCustomManipulator.HandlePan(EventInfo: TGestureEventInfo);
 begin
-  var LObj := ObjectAtLocalPoint(EventInfo.Location, false);
+  var LObj := ObjectAtLocalPoint(EventInfo.Location, false, true, false); //only checking the immediate children
   if Assigned(LObj) then
   begin
     if (not (TInteractiveGestureFlag.gfBegin in EventInfo.Flags)) and
@@ -643,14 +652,14 @@ end;
 
 procedure TCustomManipulator.HandleRotate(eventInfo: TGestureEventInfo);
 begin
-  var LObj := ObjectAtLocalPoint(EventInfo.Location, false);
+  var LObj := ObjectAtLocalPoint(EventInfo.Location, false, true, false); //only checking the immediate children
   if Assigned(LObj) and (LObj.GetObject is TControl) then
     SetControlAngle(TControl(LObj.GetObject), RadToDeg(-EventInfo.Angle));
 end;
 
 procedure TCustomManipulator.HandleZoom(EventInfo: TGestureEventInfo);
 begin
-  var LObj := ObjectAtLocalPoint(EventInfo.Location, false);
+  var LObj := ObjectAtLocalPoint(EventInfo.Location, false, true, false); //only checking the immediate children
   if (not (TInteractiveGestureFlag.gfBegin in EventInfo.Flags)) and
      (LObj.GetObject is TControl) then
   begin
@@ -664,7 +673,7 @@ end;
 
 procedure TCustomManipulator.HandlePressAndTap(EventInfo: TGestureEventInfo);
 begin
-  var LObj := ObjectAtLocalPoint(EventInfo.Location, false);
+  var LObj := ObjectAtLocalPoint(EventInfo.Location, false, true, false); //only checking the immediate children
   //TODO: delete object?
 end;
 
@@ -680,7 +689,7 @@ begin
 
     if (ssDouble in Shift) then //TODO: must do in EditMode (but has issue detecting it)
       begin
-      var LObj := ObjectAtLocalPoint(PointF(X, Y), false); //TODO: define ObjectAtPoint and ObjectAtPointLocal, also add param to not do iteration to grand-children (see internal impl)
+      var LObj := ObjectAtLocalPoint(PointF(X, Y), false, true, false); //only checking the immediate children
       if Assigned(LObj) and (LObj.GetObject is TControl) then
         BringToFrontElseSendToBack(TControl(LObj.GetObject));
       exit;
@@ -745,7 +754,7 @@ begin
 
   if (ssLeft in Shift) then
   begin
-    var LObj := ObjectAtLocalPoint(PointF(X, Y), false); //TODO: define ObjectAtPoint and ObjectAtPointLocal, also add param to not do iteration to grand-children (see internal impl)
+    var LObj := ObjectAtLocalPoint(PointF(X, Y), false, true, false); //only checking the immediate children
     if Assigned(LObj) and (LObj.GetObject is TControl) then
       with AreaSelector do
         BoundsRect := TControl(LObj.GetObject).BoundsRect;
@@ -754,33 +763,52 @@ end;
 
 procedure TCustomManipulator.MouseWheel(Shift: TShiftState; WheelDelta: Integer; var Handled: Boolean);
 begin
+  inherited; //needed for event handlers to be fired (e.g. at ancestors)
+
+  if (ssShift in Shift) then
+  begin
+    //TODO: should tell any ScrollBox parent to pan horizontally
+    exit;
+  end;
+
   if EditMode and (ssAlt in Shift) then
   begin
     var ScreenMousePos := Screen.MousePos;
-    var LObj := ObjectAtPoint(ScreenMousePos, 1);
+    var LObj := ObjectAtPoint(ScreenMousePos, false, true, false); //only checking the immediate children
     if Assigned(LObj) then
     begin
-      var Control := TControl(LObj.GetObject).ParentControl; //TODO: fix hack - have an ObjectAtPoint/ObjectAtPointLocal that has param to not recurse into children
-      var zoom_center := Control.ScreenToLocal(ScreenMousePos);
+      var Control := TControl(LObj.GetObject);
+      var zoom_center := Control.ScreenToLocal(ScreenMousePos); //use mouse cursor as center
 
-      var new_scale : single;
+      var new_scale : Single;
       if WheelDelta >= 0
         then new_scale := (1 + (WheelDelta / 120)/5)
         else new_scale := 1 / (1 - (WheelDelta / 120)/5);
 
-      BeginUpdate;
-      Control.Size.Size := TSizeF.Create(Control.Width * new_scale, Control.Height * new_scale);
+      BeginUpdate; //TODO: would it be enough to do Control.BeginUpdate/Control.EndUpdate instead?
 
-      // correction for position when scaling
-      Control.Position.Point := PointF(Control.Position.X + zoom_center.x * (1-new_scale), Control.Position.Y + zoom_center.y * (1-new_scale));
+      (*
+      if (ssCtrl in Shift) then
+      begin
+        var old_scale := Control.Scale.X;
+        Control.Scale.X := new_scale;
+        Control.Scale.Y := new_scale;
+        Control.Position.Point := Control.Position.Point + zoom_center * (1-new_scale); //TODO: not working correctly
+      end
+      else
+      *)
+      begin
+        Control.Size.Size := TSizeF.Create(Control.Width * new_scale, Control.Height * new_scale); //TODO: maybe rescale instead of resize to preserve quality?
+        //correction for zoom center position
+        Control.Position.Point := Control.Position.Point + zoom_center * (1-new_scale);
+      end; //TODO: see why control's children that are set to use "Align=Scale" seem to become larger when object shrinks and vice-versa instead of following its change (probably need to tell them to realign / parent size changed?)
+
       EndUpdate;
 
-      Handled := true; //TODO: is this needed?
+      Handled := true; //needed for parent containers to not scroll
       exit;
     end; //adapted from https://stackoverflow.com/a/66049562/903783
   end;
-
-  inherited; //needed for event handlers to be fired (e.g. at ancestors)
 end;
 
 {$endregion}

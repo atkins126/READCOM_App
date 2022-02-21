@@ -1,4 +1,4 @@
-unit uForm;
+unit uMainForm;
 
 interface
 
@@ -8,7 +8,7 @@ uses
   uClickableFrame, FMX.Controls.Presentation, FMX.StdCtrls, FMX.Layouts;
 
 type
-  TForm2 = class(TForm)
+  TMainForm = class(TForm)
     ClickableFrame1: TClickableFrame;
     ClickableFrame2: TClickableFrame;
     ClickableFrame3: TClickableFrame;
@@ -16,19 +16,19 @@ type
     Layout: TLayout;
     procedure btnEnableChildrenClick(Sender: TObject);
   private
-    { Private declarations }
+    {Private declarations}
   public
-    { Public declarations }
+    {Public declarations}
   end;
 
 var
-  Form2: TForm2;
+  MainForm: TMainForm;
 
 implementation
 
 {$R *.fmx}
 
-procedure TForm2.btnEnableChildrenClick(Sender: TObject);
+procedure TMainForm.btnEnableChildrenClick(Sender: TObject);
 begin
   for var Control in Layout.Controls do
     Control.Enabled := true;

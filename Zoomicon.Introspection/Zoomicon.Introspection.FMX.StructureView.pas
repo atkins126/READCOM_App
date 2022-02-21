@@ -1,3 +1,6 @@
+//Description: StructureView Control for FMX
+//Author: George Birbilis (http://zoomicon.com)
+
 unit Zoomicon.Introspection.FMX.StructureView;
 
 interface
@@ -8,7 +11,6 @@ uses
   System.Generics.Collections, //for TList
   System.SysUtils,
   System.Types,
-  System.UITypes,
   System.Variants,
   System.ImageList,
   FMX.Controls, //for TControl
@@ -20,31 +22,39 @@ uses
   FMX.Types; //for RegisterFmxClasses
 
 const
+  {$region 'Defaults'}
+
   DEFAULT_SHOW_ONLY_VISIBLE = true;
   DEFAULT_SHOW_ONLY_NAMED = true;
   DEFAULT_SHOW_NAMES = false;
   DEFAULT_SHOW_TYPES = false;
   DEFAULT_SHOW_HINT_NAMES = true;
   DEFAULT_SHOW_HINT_TYPES = false;
+  DEFAULT_DRAGDROP_REORDER = false; //acting as structure viewer, not editor by default
+  DEFAULT_DRAGDROP_REPARENT = false; //acting as structure viewer, not editor by default
+  DEFAULT_DRAGDROP_SELECTTARGET = true; //on drop, target is selected
+
+  {$endregion}
 
 type
-  TStructureView = class;
-
   //TClassList = TList<TClass>; //using old-style (non Generic) "TClassList" from System.Contnrs instead
 
-  TImageListHelper = class helper for TImageList
-    function Add(const aBitmap: TBitmap; const Scale: Single = 1): integer;
-  end;
+  TRestructuringOperation = (roReorderedChildren, roAddedChild, roRemovedChild);
 
-  TSelectionEvent = procedure(Sender: TComponent; Selection: TObject) of object;
+  TSelectionEvent = procedure(Sender: TObject; const Selection: TObject) of object;
+  TRestructuringEvent = procedure(Sender: TObject; const RestructuredChild: TObject; const RestructuredParent: TObject; const Operation: TRestructuringOperation) of object;
+
+  {$REGION 'TStructureView' --------------------------------------------------------}
 
   TStructureView = class(TFrame)
     TreeView: TTreeView;
     ImageList: TImageList;
     procedure TreeViewChange(Sender: TObject);
+    procedure TreeViewDragChange(SourceItem, DestItem: TTreeViewItem; var Allow: Boolean);
 
   protected
     FGUIRoot: TControl;
+    {ShowXX}
     FShowOnlyClasses: TClassList;
     FShowOnlyNamed: Boolean;
     FShowOnlyVisible: Boolean;
@@ -52,23 +62,38 @@ type
     FShowTypes: Boolean;
     FShowHintNames: Boolean;
     FShowHintTypes: Boolean;
+    {DragDropXX}
+    FDragDropReorder: Boolean;
+    FDragDropReparent: Boolean;
+    FDragDropSelectTarget: Boolean;
+    {Events}
     FOnSelection: TSelectionEvent;
+    FOnRestructuring: TRestructuringEvent;
 
-    procedure SetShowOnlyClasses(const Value: TClassList);
-    procedure SetShowOnlyVisible(const Value: Boolean);
-    procedure SetShowOnlyNamed(const Value: Boolean);
-    procedure SetShowNames(const Value: Boolean);
-    procedure SetShowTypes(const Value: Boolean);
-    procedure SetShowHintNames(const Value: Boolean);
-    procedure SetShowHintTypes(const Value: Boolean);
-
-    procedure SetGUIRoot(const Value: TControl);
-    procedure LoadTreeView;
+    {GUIRoot}
+    procedure SetGUIRoot(const Value: TControl); virtual;
+    procedure LoadTreeView; virtual;
+    {ShowXX}
+    procedure SetShowOnlyClasses(const Value: TClassList); virtual;
+    procedure SetShowOnlyVisible(const Value: Boolean); virtual;
+    procedure SetShowOnlyNamed(const Value: Boolean); virtual;
+    procedure SetShowNames(const Value: Boolean); virtual;
+    procedure SetShowTypes(const Value: Boolean); virtual;
+    procedure SetShowHintNames(const Value: Boolean); virtual;
+    procedure SetShowHintTypes(const Value: Boolean); virtual;
+    {DragDropXX}
+    procedure SetDragDropReorder(const Value: Boolean); virtual;
+    procedure SetDragDropReparent(const Value: Boolean); virtual;
+    {SelectedItem}
+    function GetSelectedObject: TObject; virtual;
+    procedure SetSelectedObject(const Value: TObject); virtual;
 
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
 
+  published
+    //Properties//
     property GUIRoot: TControl read FGUIRoot write SetGUIRoot;
     property ShowOnlyClasses: TClassList read FShowOnlyClasses write SetShowOnlyClasses; //default nil
     property ShowOnlyVisible: Boolean read FShowOnlyVisible write SetShowOnlyVisible default DEFAULT_SHOW_ONLY_VISIBLE;
@@ -77,63 +102,38 @@ type
     property ShowTypes: Boolean read FShowTypes write SetShowTypes default DEFAULT_SHOW_TYPES;
     property ShowHintNames: Boolean read FShowHintNames write SetShowHintNames default DEFAULT_SHOW_HINT_NAMES;
     property ShowHintTypes: Boolean read FShowHintTypes write SetShowHintTypes default DEFAULT_SHOW_HINT_TYPES;
-
-  published
+    property DragDropReorder: Boolean read FDragDropReorder write SetDragDropReorder default DEFAULT_DRAGDROP_REORDER;
+    property DragDropReparent: Boolean read FDragDropReparent write SetDragDropReparent default DEFAULT_DRAGDROP_REPARENT;
+    property DragDropSelectTarget: Boolean read FDragDropSelectTarget write FDragDropSelectTarget default DEFAULT_DRAGDROP_SELECTTARGET;
+    property SelectedObject: TObject read GetSelectedObject write SetSelectedObject; //default nil
+    //Events//
     property OnSelection: TSelectionEvent read FOnSelection write FOnSelection;
+    property OnRestructuring: TRestructuringEvent read FOnRestructuring write FOnRestructuring;
   end;
+
+  {$ENDREGION ......................................................................}
 
 procedure Register;
 
 implementation
   uses
+    System.UITypes, //for TDragMode
     System.Rtti, //for TValue
     FMX.Dialogs, //for ShowMessage
-    FMX.MultiResBitmap, //for TSizeKind
-    Zoomicon.Helpers.RTL.ClassListHelpers; //for TClassList.FindClassOf
-
-{$REGION 'ImageListHelper'} //TODO: move to other package
-//based on https://stackoverflow.com/a/43086181/903783
-
-function TImageListHelper.Add(const aBitmap: TBitmap; const Scale: Single = 1): integer;
-begin
-  Result := -1;
-  if (aBitmap.Width = 0) or (aBitmap.Height = 0) then exit;
-
-  // add source bitmap
-  var vSource := Source.Add;
-  var vBitmapItem: TCustomBitmapItem;
-  with vSource.MultiResBitmap do
-  begin
-    TransparentColor := TColorRec.Fuchsia;
-    SizeKind := TSizeKind.Source;
-    Width := Round(aBitmap.Width / SCALE);
-    Height := Round(aBitmap.Height / SCALE);
-    vBitmapItem := ItemByScale(SCALE, True, True);
-  end;
-
-  if vBitmapItem = nil then
-  begin
-    vBitmapItem := vSource.MultiResBitmap.Add;
-    vBitmapItem.Scale := SCALE;
-  end;
-  vBitmapItem.Bitmap.Assign(aBitmap);
-
-  var vDest := Destination.Add;
-  var vLayer := vDest.Layers.Add;
-  vLayer.SourceRect.Rect := TRectF.Create(TPoint.Zero, vSource.MultiResBitmap.Width, vSource.MultiResBitmap.Height);
-  vLayer.Name := vSource.Name;
-  Result := vDest.Index;
-end;
-
-{$endregion}
+    Zoomicon.Helpers.RTL.ClassListHelpers, //for TClassList.FindClassOf
+    Zoomicon.Helpers.FMX.ImgList.ImageListHelpers, //for TImageListAddBitmapHelper
+    Zoomicon.Helpers.FMX.TreeView.TreeViewHelpers; //for TTreeViewItemSearchHelper
 
 {$R *.fmx}
 
-{ TGUIStructure }
+{$REGION 'TStructureView'}
+
+{$region 'Creation / Destruction '}
 
 constructor TStructureView.Create(AOwner: TComponent);
 begin
   inherited;
+
   FShowOnlyClasses := nil;
   FShowOnlyVisible := DEFAULT_SHOW_ONLY_VISIBLE;
   FShowOnlyNamed := DEFAULT_SHOW_ONLY_NAMED;
@@ -141,6 +141,9 @@ begin
   FShowTypes := DEFAULT_SHOW_TYPES;
   FShowHintNames := DEFAULT_SHOW_HINT_NAMES;
   FShowHintTypes := DEFAULT_SHOW_HINT_TYPES;
+
+  SetDragDropReorder(DEFAULT_DRAGDROP_REORDER);
+  SetDragDropReparent(DEFAULT_DRAGDROP_REPARENT);
 end;
 
 destructor TStructureView.Destroy;
@@ -149,16 +152,85 @@ begin
   ImageList.ClearCache;
   //FreeAndNil(TreeView); //should be done automatically when "inherited" is called
   //FreeAndNil(Images); //should be done automatically when "inherited" is called
+  FreeAndNil(ShowOnlyClasses); //freeing any TClassList that had been allocated and assigned to the "ShowOnlyClasses" property to avoid external code having to do it (obviously that TClassList shouldn't be assigned elsewhere)
   inherited;
 end;
 
-{$region 'Properties'}
+{$endregion}
+
+{$region 'Properties' ---------------------------------------------------}
+
+{$region 'GUIRoot'}
 
 procedure TStructureView.SetGUIRoot(const Value: TControl);
 begin
   FGUIRoot := Value;
   LoadTreeView;
 end;
+
+procedure TStructureView.LoadTreeView;
+
+  procedure LoadTreeItemChild(const TheControl: TControl; const TheParent: TFmxObject; const IconHeight: Single);
+  begin
+    if not Assigned(TheControl) or
+       (Assigned(FShowOnlyClasses) and (FShowOnlyClasses.Count > 0) and (FShowOnlyClasses.FindClassOf(TheControl, false) < 0)) or //if FShowOnlyClasses is empty ignore it
+       (FShowOnlyVisible and (not TheControl.Visible)) or
+       (FShowOnlyNamed and (TheControl.Name = '')) //ignore style-related controls (unnamed), including their children
+      then exit;
+
+    var TreeItem := TTreeViewItem.Create(Parent);
+    with TreeItem do
+    begin
+      BeginUpdate;
+      Parent := TheParent;
+
+      TagObject := TheControl;
+
+      var ControlToBitmap := TheControl.MakeScreenshot; //this seems to leak memory
+      var imgIndex := ImageList.Add(ControlToBitmap); //this will copy from the bitmap
+      FreeAndNil(ControlToBitmap); //MUST FREE THE BITMAP ELSE WE HAVE VARIOUS MEMORY LEAKS
+
+      ImageIndex := imgIndex;
+      var img := ImageList.Source.Items[imgIndex].MultiResBitmap;
+      StylesData['glyphstyle.Size.Size']:= TValue.From(TSizeF.Create(img.Width*(IconHeight/img.Height), IconHeight));
+
+      if FShowNames then Text := TheControl.Name;
+      if FShowTypes then Text := Text + ': ' + TheControl.ClassName;
+
+      if FShowHintNames then Hint := TheControl.Name;
+      if FShowHintTypes then Hint := Hint + ': ' + TheControl.ClassName;
+      ShowHint := true;
+
+      for var ChildControl in TheControl.Controls do
+        LoadTreeItemChild(ChildControl, TreeItem, IconHeight);
+
+      EndUpdate;
+    end;
+  end;
+
+begin
+  BeginUpdate;
+  TreeView.Clear;
+  ImageList.ClearCache;
+  ImageList.Dormant := true;
+
+  if Assigned(FGUIRoot) then
+    begin
+    TreeView.BeginUpdate;
+    LoadTreeItemChild(FGUIRoot, TreeView, TreeView.ItemHeight);
+
+    //TreeView.CollapseAll; //try if new images don't show up
+
+    TreeView.ExpandAll;
+
+    TreeView.EndUpdate;
+    end;
+  EndUpdate;
+end;
+
+{$endregion}
+
+{$region 'ShowXX'}
 
 procedure TStructureView.SetShowOnlyClasses(const Value: TClassList);
 begin
@@ -204,69 +276,113 @@ end;
 
 {$endregion}
 
-procedure TStructureView.LoadTreeView;
+{$region 'DragDropXX'}
 
-  procedure LoadTreeItemChild(const Control: TControl; const Parent: TFmxObject; const IconHeight: Single);
-  begin
-    if not Assigned(Control) or
-       (Assigned(FShowOnlyClasses) and (FShowOnlyClasses.Count > 0) and (FShowOnlyClasses.FindClassOf(Control, false) < 0)) or //if FShowOnlyClasses is empty ignore it
-       (FShowOnlyVisible and (not Control.Visible)) or
-       (FShowOnlyNamed and (Control.Name = '')) //ignore style-related controls (unnamed), including their children
-      then exit;
-
-    var TreeItem := TTreeViewItem.Create(Parent);
-    TreeItem.BeginUpdate;
-    TreeItem.Parent := Parent;
-
-    TreeItem.Tag := NativeInt(Control);
-
-    var imgIndex := ImageList.Add(Control.MakeScreenshot);
-    TreeItem.ImageIndex := imgIndex; //TODO: check if causes mem leaks
-    var img := ImageList.Source.Items[imgIndex].MultiResBitmap;
-    TreeItem.StylesData['glyphstyle.Size.Size']:= TValue.From(TSizeF.Create(img.Width*(IconHeight/img.Height), IconHeight));
-
-    if FShowNames then TreeItem.Text := Control.Name;
-    if FShowTypes then TreeItem.Text := TreeItem.Text + ': ' + Control.ClassName;
-    TreeItem.ShowHint := true;
-
-    if FShowHintNames then TreeItem.Hint := Control.Name;
-    if FShowHintTypes then TreeItem.Hint := TreeItem.Hint + ': ' + Control.ClassName;
-
-    for var ChildControl in Control.Controls do
-      LoadTreeItemChild(ChildControl, TreeItem, IconHeight);
-
-    TreeItem.EndUpdate;
-  end;
-
+procedure TStructureView.SetDragDropReorder(const Value: Boolean);
 begin
-  BeginUpdate;
-  TreeView.Clear;
-  ImageList.ClearCache;
-  ImageList.Dormant := true;
-
-  if Assigned(FGUIRoot) then
-    begin
-    TreeView.BeginUpdate;
-    LoadTreeItemChild(FGUIRoot, TreeView, TreeView.ItemHeight);
-
-    //TreeView.CollapseAll; //try if new images don't show up
-
-    TreeView.ExpandAll;
-
-    TreeView.EndUpdate;
-    end;
-  EndUpdate;
+  FDragDropReorder := Value;
+  TreeView.AllowDrag := FDragDropReorder or FDragDropReparent;
 end;
 
-{$region 'Events'}
+procedure TStructureView.SetDragDropReparent(const Value: Boolean);
+begin
+  FDragDropReparent := Value;
+  TreeView.AllowDrag := FDragDropReorder or FDragDropReparent;
+end;
+
+{$endregion}
+
+{$region 'SelectedObject'}
+
+function TStructureView.GetSelectedObject: TObject;
+begin
+  var selectedItem := TreeView.Selected;
+  if Assigned(selectedItem) then
+    result := selectedItem.TagObject
+  else
+    result := nil;
+end;
+
+procedure TStructureView.SetSelectedObject(const Value: TObject);
+begin
+  if Assigned(Value) then
+    TreeView.Selected := TreeView.FindObject(Value)
+  else
+    TreeView.Selected := nil; //clear selection (instead of searching for "TagObject = nil" at the tree items
+end;
+
+{$endregion}
+
+{$endregion .............................................................}
+
+{$region 'Events' -------------------------------------------------------}
 
 procedure TStructureView.TreeViewChange(Sender: TObject);
 begin
   if Assigned(FOnSelection) then
-    FOnSelection(Self, TObject(TreeView.Selected.Tag));
+  begin
+    var selectedItem := TreeView.Selected;
+    if Assigned(selectedItem) then
+      FOnSelection(Self, selectedItem.TagObject);
+  end;
 end;
 
-{$endregion}
+procedure TStructureView.TreeViewDragChange(SourceItem, DestItem: TTreeViewItem; var Allow: Boolean);
+
+  procedure Restructured(const AChild: TObject; AParent: TObject; const Operation: TRestructuringOperation);
+  begin
+    if AParent is TControl then
+      TControl(AParent).Repaint; //TODO: see why we need to tell to repaint in that case to show the new order of its children (would expect it to be done automatically)
+
+    if Assigned(FOnRestructuring) then
+      FOnRestructuring(Self, AChild, AParent, Operation);
+  end;
+
+begin
+  Allow := DragDropReorder or DragDropReparent;
+  if Allow then
+  begin
+    var SourceObject := TFmxObject(SourceItem.TagObject);
+    var DestObject := TFmxObject(DestItem.TagObject);
+    var SourceObjectParent := SourceObject.Parent;
+
+    if SourceObjectParent = DestObject then //if dropped to the same parent
+    begin
+      Allow := DragDropReorder;
+      if Allow then
+      begin
+        SourceObject.BringToFront; //places last in the parent (corresponds to top in the Z-Order), as done for the TTreeViewItems by the TTreeView
+
+        Restructured(SourceObject, SourceObjectParent, roReorderedChildren);
+
+        if DragDropSelectTarget then
+          TreeView.Selected := DestItem;
+      end
+    end
+
+    else //if dropped onto other than its parent
+    begin
+      Allow := DragDropReparent;
+      if Allow then
+      begin
+        SourceObject.Parent := DestObject; //move the FmxObjects the TTreeViewItems point to //assuming TagObject contains a TFmxObject
+
+        Restructured(SourceObject, SourceObjectParent, roRemovedChild);
+        Restructured(SourceObject, DestObject, roAddedChild);
+
+        if DragDropSelectTarget then
+          TreeView.Selected := DestItem;
+      end
+    end;
+
+  end;
+end; //the TTreeViewItems themselves will be reordered by the TTreeView since TreeView.AllowDrag maps to "DragDropReorder or DragDropReparent"
+
+{$endregion .............................................................}
+
+{$ENDREGION}
+
+{$region 'Registration'}
 
 procedure RegisterClasses;
 begin
@@ -279,6 +395,8 @@ begin
   RegisterClasses;
   RegisterComponents('Zoomicon', [TStructureView]);
 end;
+
+{$endregion}
 
 initialization
   RegisterClasses; //don't call Register here, it's called by the IDE automatically on a package installation (fails at runtime)

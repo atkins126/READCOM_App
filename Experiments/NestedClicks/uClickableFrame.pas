@@ -5,22 +5,25 @@ interface
 uses
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants, 
   FMX.Types, FMX.Graphics, FMX.Controls, FMX.Forms, FMX.Dialogs, FMX.StdCtrls,
-  FMX.Controls.Presentation, FMX.Objects;
+  FMX.Controls.Presentation, FMX.Objects, FMX.Layouts;
 
 type
   TClickableFrame = class(TFrame)
     LabelName: TLabel;
-    Rectangle: TRectangle;
     cbHitTest: TCheckBox;
     cbFixDblClick: TCheckBox;
     cbEnabled: TCheckBox;
     btnEnableChildren: TButton;
     UpdateTimer: TTimer;
     cbAbsoluteEnabled: TCheckBox;
+    cbTabStop: TCheckBox;
+    Layout: TLayout;
+    Rectangle: TRectangle;
     procedure cbHitTestChange(Sender: TObject);
     procedure cbEnabledChange(Sender: TObject);
     procedure btnEnableChildrenClick(Sender: TObject);
     procedure UpdateTimerTimer(Sender: TObject);
+    procedure cbTabStopChange(Sender: TObject);
   protected
     procedure DblClick; override;
     procedure MouseClick(Button: TMouseButton; Shift: TShiftState; X, Y: Single); override;
@@ -53,11 +56,16 @@ end;
 
 {$endregion}
 
-{ TClickableFrame }
+{TClickableFrame}
 
 procedure TClickableFrame.cbHitTestChange(Sender: TObject);
 begin
   HitTest := cbHitTest.IsChecked;
+end;
+
+procedure TClickableFrame.cbTabStopChange(Sender: TObject);
+begin
+  TabStop := cbTabStop.IsChecked;
 end;
 
 procedure TClickableFrame.cbEnabledChange(Sender: TObject);
@@ -71,12 +79,14 @@ begin
   cbHitTest.IsChecked := HitTest;
   cbEnabled.IsChecked := Enabled;
   cbAbsoluteEnabled.IsChecked := AbsoluteEnabled;
+  cbTabStop.IsChecked := TabStop;
 end;
 
 procedure TClickableFrame.btnEnableChildrenClick(Sender: TObject);
 begin
-  for var Control in Rectangle.Controls do
-    Control.Enabled := true;
+  for var Control in Layout.Controls do
+    if Control <> cbAbsoluteEnabled then
+      Control.Enabled := true;
 end;
 
 procedure TClickableFrame.DblClick; //unfortunately there's no MouseDblClick that would also give us ShiftState (say double-clicking with Alt pressed etc.)

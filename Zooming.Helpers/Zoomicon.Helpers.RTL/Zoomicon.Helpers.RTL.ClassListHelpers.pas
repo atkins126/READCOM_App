@@ -16,6 +16,7 @@ interface
     end;
 
 implementation
+  uses System.Classes; //seems to be needed to expand TClassList inline functions
 
 {$REGION 'TClassListFindClassOfHelper'}
 
@@ -28,7 +29,7 @@ end;
 
 function TClassListFindClassOfHelper.FindClassOf(const AObject: TObject; const AExact: Boolean = True; const AStartAt: Integer = 0): Integer;
 begin
-  for var i := AStartAt to Count - 1 do
+  for var i := AStartAt to (Count - 1) do //Items is a 0-indexed array
     if (AExact and (Items[i] = AObject.ClassType)) or
        (not AExact and AObject.InheritsFrom(Items[i])) then
     begin

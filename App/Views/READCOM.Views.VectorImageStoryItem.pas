@@ -1,6 +1,8 @@
 //Description: READ-COM VectorImageStoryItem View
 //Author: George Birbilis (http://zoomicon.com)
 
+//TODO: merge ImageStoryItem with its children BitmapImageStoryItem and VectorImageStoryItem so that any ImageStoryItem can load its state from other "image" .READCOM file, be it bitmap or vector based (users don't need to understand the difference)
+
 unit READCOM.Views.VectorImageStoryItem;
 
 interface
@@ -15,27 +17,32 @@ uses
 
 const
   EXT_SVG = '.svg';
-  FILTER_SVG = 'SVG vector images (*.svg)|*.svg';
+  FILTER_VECTOR_IMAGE_TITLE = 'Vector images (*.svg)';
+  FILTER_VECTOR_IMAGE_EXTS = '*' + EXT_SVG;
+  FILTER_VECTOR_IMAGE = FILTER_VECTOR_IMAGE_TITLE + '|' + FILTER_VECTOR_IMAGE_EXTS;
 
 type
   TVectorImageStoryItem = class(TImageStoryItem, IVectorImageStoryItem, IImageStoryItem, IStoryItem, IStoreable)
-  private
-    function GetSVGText: String;
-    procedure SetSVGText(const Value: String);
-
   //--- Methods ---
 
   protected
-    { Image }
+    FStoreSVG: Boolean;
+
+    {Image}
     function GetImage: TImage; override;
     procedure SetImage(const Value: TImage); override; //allows only TSVGIconImage
 
-    { SVGImage }
+    {SVGImage}
     function GetSVGImage: TSVGIconImage;
     procedure SetSVGImage(const Value: TSVGIconImage);
 
+    {SVGText}
+    function GetSVGText: String;
+    procedure SetSVGText(const Value: String);
+
+    procedure Resize; override;
+
   public
-    constructor Create(AOnwer: TComponent); override;
 
     {$region 'IStoreable'}
     function GetLoadFilesFilter: String; override;
@@ -48,29 +55,36 @@ type
   published
     property Image: TImage read GetImage stored false; //overrides ancestor's "write" and "stored" settings
     property SVGImage: TSVGIconImage read GetSVGImage write SetSVGImage stored false default nil;
-    property SVGText: String read GetSVGText write SetSVGText;
+    property SVGText: String read GetSVGText write SetSVGText stored FStoreSVG;
     property AutoSize default true;
+  end;
+
+  TVectorImageStoryItemFactory = class(TInterfacedObject, IStoryItemFactory)
+    function New(const AOwner: TComponent = nil): IStoryItem;
   end;
 
   procedure Register;
 
 implementation
+  uses
+    READCOM.Views.StoryItemFactory; //for StoryItemFactories, StoryItemAddFileFilter
 
 {$R *.fmx}
 
-{ TVectorImageStoryItem }
+{$REGION 'TVectorImageStoryItem'}
 
-constructor TVectorImageStoryItem.Create(AOnwer: TComponent);
+procedure TVectorImageStoryItem.Resize;
 begin
-  inherited;
-  FAutoSize := true;
+  var tmp := SVGText;
+  SVGText := '';
+  SVGText := tmp; //recalculate bitmap from the SVG //TODO: not sure if the "tmp" step is needed, or if it recalculates the buffer at all (probably doesn't have the new size at this point?)
 end;
 
 {$region 'IStoreable'}
 
 function TVectorImageStoryItem.GetLoadFilesFilter: String;
 begin
-  result := FILTER_SVG;
+  result := FILTER_VECTOR_IMAGE;
 end;
 
 procedure TVectorImageStoryItem.Load(const Stream: TStream; const ContentFormat: String = EXT_READCOM);
@@ -88,11 +102,12 @@ begin
   var bitmap := Glyph.MultiResBitmap[0] as TSVGIconFixedBitmapItem;
   bitmap.SVG.LoadFromStream(Stream); //TODO: should fix to read size info from SVG
   //bitmap.SVG.FixedColor := TAlphaColorRec.Red;
+  FStoreSVG := true; //mark that we loaded custom SVG
   bitmap.DrawSVGIcon;
   if FAutoSize then
     begin
-    //SetSize(bitmap.Width, bitmap.Height); //TODO
-    SetSize(100,100);
+    //SetSize(bitmap.Width, bitmap.Height); //TODO: seems SVG size doesn't get loaded
+    SetSize(100,100); //TODO: fix this
     Glyph.Align := TAlignLayout.Contents;
     end;
 end;
@@ -133,22 +148,44 @@ end;
 
 function TVectorImageStoryItem.GetSVGText: String;
 begin
-  result := (Glyph.MultiResBitmap[0] as TSVGIconFixedBitmapItem).SVGText;
+  if Assigned(Glyph) then
+    result := (Glyph.MultiResBitmap[0] as TSVGIconFixedBitmapItem).SVGText
+  else
+    result := '';
 end;
 
 procedure TVectorImageStoryItem.SetSVGText(const Value: String);
-begin
-  if FAutoSize then
-    Glyph.Align := TAlignLayout.None;
-  (Glyph.MultiResBitmap[0] as TSVGIconFixedBitmapItem).SVGText := Value;
-  if FAutoSize then
-    begin
-    Size.Size := Glyph.Size.Size;
-    Glyph.Align := TAlignLayout.Contents;
-    end;
+begin //TODO: should restore default Glyph (keep it to some global/static var once?) if SVGText is set to ''
+  if Assigned(Glyph) then
+  begin
+    if FAutoSize then
+      Glyph.Align := TAlignLayout.None;
+
+    var bitmap := Glyph.MultiResBitmap[0] as TSVGIconFixedBitmapItem;
+    bitmap.SVGText := Value;
+    if FAutoSize then //TODO: shouldn't hardcode any size here, item should keep its Width/Height when loading this property
+      begin
+      //SetSize(bitmap.Width, bitmap.Height); //TODO: seems SVG size doesn't get loaded
+      //SetSize(100,100);
+      Glyph.Align := TAlignLayout.Contents;
+      end;
+
+    FStoreSVG := true; //mark that we loaded custom SVG
+  end;
 end;
 
 {$endregion}
+
+{$ENDREGION}
+
+{$ENDREGION}
+
+{$REGION 'TVectorImageStoryItemFactory'}
+
+function TVectorImageStoryItemFactory.New(const AOwner: TComponent = nil): IStoryItem;
+begin
+  result := TVectorImageStoryItem.Create(AOwner);
+end;
 
 {$ENDREGION}
 
@@ -165,6 +202,9 @@ begin
 end;
 
 initialization
+  StoryItemFactories.Add([EXT_SVG], TVectorImageStoryItemFactory.Create);
+  AddStoryItemFileFilter(FILTER_VECTOR_IMAGE_TITLE, FILTER_VECTOR_IMAGE_EXTS);
+
   RegisterClasses; //don't call Register here, it's called by the IDE automatically on a package installation (fails at runtime)
 
 end.

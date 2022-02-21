@@ -39,29 +39,49 @@ type
 
   {$ENDREGION .................................................................}
 
+  TAreaSelectionMode = (asmoContained, asmoIntersected); //the default is the 1st one (select only contained items in area selection)
+
   {$REGION 'TAreaSelector' ----------------------------------------------------}
 
   TAreaSelector = class(TSelection)
   protected
+    FSelectionMode: TAreaSelectionMode;
     FOnlyFromTop: Boolean;
 
     function DoGetUpdateRect: TRectF; override; //used to fix bug in TSelection that doesn't consider usage inside a TScaledLayout
+
     function GetControls(const RectPicker: TRectFPredicate): TControlList;
-    function GetIntersected: TControlList; virtual;
     function GetContained: TControlList; virtual;
+    function GetIntersected: TControlList; virtual;
+    function GetSelected: TControlList; virtual;
+
+    function GetControlCount(const RectPicker: TRectFPredicate): Integer;
+    function GetContainedCount: Integer; virtual;
+    function GetIntersectedCount: Integer; virtual;
+    function GetSelectedCount: Integer; virtual;
 
   published
-    property Intersected: TControlList read GetIntersected stored false;
-    property Selected: TControlList read GetContained stored false;
+    property Contained: TControlList read GetContained;
+    property Intersected: TControlList read GetIntersected;
+    property Selected: TControlList read GetSelected;
+
+    property ContainedCount: Integer read GetContainedCount;
+    property IntersectedCount: Integer read GetIntersectedCount;
+    property SelectedCount: Integer read GetSelectedCount;
+
+    property SelectionMode: TAreaSelectionMode read FSelectionMode write FSelectionMode default Low(TAreaSelectionMode);
     property OnlyFromTop: Boolean read FOnlyFromTop write FOnlyFromTop;
   end;
 
   {$ENDREGION .................................................................}
 
+  procedure Register;
+
 implementation
   uses
     Zoomicon.Generics.Functors, //for TF
     Zoomicon.Generics.Collections, //for TListEx
+    Zoomicon.Helpers.FMX.Controls.ControlHelpers, //for TControlSubComponentHelper
     FMX.Ani,
     FMX.Effects,
     FMX.Types, //for RegisterFmxClasses
@@ -120,15 +140,27 @@ begin
   Result.Inflate((GripSize + 1) * AbsoluteScale.X, (GripSize + 1) * AbsoluteScale.Y); //not sure if that is too big, however it works compared to just using Scale as TSelection does
 end;
 
-function TAreaSelector.GetIntersected: TControlList;
+{$region 'Get'}
+
+function TAreaSelector.GetControls(const RectPicker: TRectFPredicate): TControlList;
 begin
-  var TheBounds := BoundsRect;
-  result := GetControls(
-      function (ARect: TRectF): Boolean
-      begin
-        result := TheBounds.IntersectsWith(ARect);
-      end
-    );
+  if not Assigned(RectPicker) or (Parent = nil) then exit(nil);
+
+  result := TListEx<TControl>.GetAll(ParentControl.Controls,
+    function(AControl: TControl): Boolean
+    begin
+      result := (AControl <> Self) //not selecting ourselves
+                and (not AControl.SubComponent) //not selecting our subcomponents
+                and RectPicker(AControl.BoundsRect);
+    end
+  );
+
+  if OnlyFromTop and (result.Count > 1) then
+  begin
+    var TopOneSelected := result.Last; //the last one in the Components list is the one on top in the Z-Order
+    result.Clear; //clear the previously calculated result, avoid creating new list (would have to free previous one)
+    result.Add(TopOneSelected); //return single result in a list
+  end;
 end;
 
 function TAreaSelector.GetContained: TControlList;
@@ -142,26 +174,80 @@ begin
     );
 end;
 
-function TAreaSelector.GetControls(const RectPicker: TRectFPredicate): TControlList;
+function TAreaSelector.GetIntersected: TControlList;
 begin
-  if not Assigned(RectPicker) then
-    result := nil
-  else
-    begin
-    if (Parent = nil) then
-      result := nil
-    else
-      result := TListEx<TControl>.GetAll(ParentControl.Controls,
-        function(AControl: TControl): Boolean
-        begin
-          result := (AControl <> Self) //not selecting ourselves
-                    and RectPicker(AControl.BoundsRect);
-        end
-      );
-      if OnlyFromTop and (result.Count > 1) then
-        result := TControlList.Create(result.Last);
-    end;
+  var TheBounds := BoundsRect;
+  result := GetControls(
+      function (ARect: TRectF): Boolean
+      begin
+        result := TheBounds.IntersectsWith(ARect);
+      end
+    );
 end;
+
+function TAreaSelector.GetSelected: TControlList;
+begin
+  case FSelectionMode of
+    asmoContained: result := GetContained;
+    asmoIntersected: result := GetIntersected;
+  else
+    result := nil;
+  end;
+end;
+
+{$endregion}
+
+{$region 'Count'}
+
+function TAreaSelector.GetControlCount(const RectPicker: TRectFPredicate): Integer;
+begin
+  if not Assigned(RectPicker) or (Parent = nil) then exit(0);
+
+  result := TListEx<TControl>.GetCount(ParentControl.Controls,
+    function(AControl: TControl): Boolean
+    begin
+      result := (AControl <> Self) //not selecting ourselves
+                and RectPicker(AControl.BoundsRect);
+    end
+  );
+
+  if OnlyFromTop and (result > 1) then
+    result := 1;
+end;
+
+function TAreaSelector.GetContainedCount: Integer;
+begin
+  var TheBounds := BoundsRect;
+  result := GetControlCount(
+      function (ARect: TRectF): Boolean
+      begin
+        result := TheBounds.Contains(ARect);
+      end
+    );
+end;
+
+function TAreaSelector.GetIntersectedCount: Integer;
+begin
+  var TheBounds := BoundsRect;
+  result := GetControlCount(
+      function (ARect: TRectF): Boolean
+      begin
+        result := TheBounds.IntersectsWith(ARect);
+      end
+    );
+end;
+
+function TAreaSelector.GetSelectedCount: Integer;
+begin
+  case FSelectionMode of
+    asmoContained: result := GetContainedCount;
+    asmoIntersected: result := GetIntersectedCount;
+  else
+    result := 0;
+  end;
+end;
+
+{$endregion}
 
 {$ENDREGION ...................................................................}
 
